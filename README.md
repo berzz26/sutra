@@ -198,7 +198,9 @@ the resident BGE model, retrieves vector candidates using cosine distance and
 lexical candidates using PostgreSQL English full-text search, then combines
 their ranks with RRF. The returned `score` is the RRF score, not a probability;
 `semantic_score` is cosine similarity (`1 - distance`) and `lexical_score` is
-PostgreSQL `ts_rank_cd` when that method returned the chunk.
+PostgreSQL `ts_rank_cd` when that method returned the chunk. For YouTube
+results, `timestamp_url` is also returned; it preserves the original URL's
+query parameters and adds `t=<start time in seconds>`.
 
 ## Documentation
 

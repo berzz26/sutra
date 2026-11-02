@@ -14,6 +14,7 @@ export interface SearchResult {
   video_id: string
   video_title?: string
   original_url?: string
+  timestamp_url?: string
   text: string
   start_ms: number
   end_ms: number

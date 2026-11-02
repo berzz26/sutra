@@ -41,3 +41,18 @@ func TestFuseOffsetAndLimit(t *testing.T) {
 		t.Fatalf("unexpected page: %#v", results)
 	}
 }
+
+func TestTimestampURLPreservesQueryAndUsesChunkStart(t *testing.T) {
+	original := "https://www.youtube.com/watch?v=JjDjNgkFo&si=abc"
+	got := timestampURL(&original, 9_105_200)
+	if got == nil || *got != "https://www.youtube.com/watch?si=abc&t=9105&v=JjDjNgkFo" {
+		t.Fatalf("unexpected timestamp URL: %v", got)
+	}
+}
+
+func TestTimestampURLRejectsInvalidURL(t *testing.T) {
+	original := "not a URL"
+	if got := timestampURL(&original, 1000); got != nil {
+		t.Fatalf("expected nil timestamp URL, got %q", *got)
+	}
+}

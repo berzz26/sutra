@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,6 +47,7 @@ type Result struct {
 	VideoID       string  `json:"video_id"`
 	VideoTitle    *string `json:"video_title,omitempty"`
 	OriginalURL   *string `json:"original_url,omitempty"`
+	TimestampURL  *string `json:"timestamp_url,omitempty"`
 	Text          string  `json:"text"`
 	StartMs       int64   `json:"start_ms"`
 	EndMs         int64   `json:"end_ms"`
@@ -219,7 +222,22 @@ func Fuse(semantic, lexical []Candidate, rrfK, limit, offset int) []Result {
 }
 
 func baseResult(candidate Candidate) Result {
-	return Result{ChunkID: candidate.ChunkID, VideoID: candidate.VideoID, VideoTitle: candidate.VideoTitle, OriginalURL: candidate.OriginalURL, Text: candidate.Text, StartMs: candidate.StartMs, EndMs: candidate.EndMs}
+	return Result{ChunkID: candidate.ChunkID, VideoID: candidate.VideoID, VideoTitle: candidate.VideoTitle, OriginalURL: candidate.OriginalURL, TimestampURL: timestampURL(candidate.OriginalURL, candidate.StartMs), Text: candidate.Text, StartMs: candidate.StartMs, EndMs: candidate.EndMs}
+}
+
+func timestampURL(original *string, startMs int64) *string {
+	if original == nil || strings.TrimSpace(*original) == "" || startMs < 0 {
+		return nil
+	}
+	parsed, err := url.Parse(*original)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return nil
+	}
+	query := parsed.Query()
+	query.Set("t", strconv.FormatInt(startMs/1000, 10))
+	parsed.RawQuery = query.Encode()
+	value := parsed.String()
+	return &value
 }
 
 func rankOrMax(rank int) int {
