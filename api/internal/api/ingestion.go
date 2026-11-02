@@ -45,15 +45,31 @@ func (h *Handlers) listSubtitles(c *fiber.Ctx) error {
 	if rawURL == "" {
 		return ingestion.NewError(ingestion.ErrCodeInvalidYouTubeURL, "url is required")
 	}
-	videoID, title, subtitles, err := h.service.DiscoverYouTubeSubtitles(c.Context(), rawURL)
+	meta, subtitles, err := h.service.DiscoverYouTubeSubtitles(c.Context(), rawURL)
 	if err != nil {
 		return err
 	}
 	return c.JSON(fiber.Map{
-		"video_id":  videoID,
-		"title":     title,
+		"video_id": meta.ID,
+		"title":    meta.Title,
+		"metadata": fiber.Map{
+			"video_id":      meta.ID,
+			"title":         meta.Title,
+			"thumbnail_url": meta.Thumbnail,
+			"duration_ms":   int64(meta.Duration * 1000),
+			"channel":       firstNonEmptyText(meta.Channel, meta.Uploader),
+		},
 		"subtitles": subtitles,
 	})
+}
+
+func firstNonEmptyText(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (h *Handlers) uploadTranscript(c *fiber.Ctx) error {

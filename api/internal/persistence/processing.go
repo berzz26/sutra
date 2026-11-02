@@ -2,18 +2,24 @@ package persistence
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
 	"time"
 
 	"github.com/berzz/searcher/backend/internal/domain"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type ProcessingState struct {
 	VideoID           string  `json:"video_id"`
 	Status            string  `json:"status"`
+	Stage             string  `json:"stage"`
+	ProgressPercent   int     `json:"progress_percent"`
+	CueCount          int     `json:"cue_count"`
+	EmbeddingCount    int     `json:"embedding_count"`
 	ProcessingVersion string  `json:"processing_version"`
 	ModelVersion      string  `json:"model_version"`
 	LastError         *string `json:"last_error,omitempty"`
@@ -83,7 +89,7 @@ func SaveChunks(ctx context.Context, p *pgxpool.Pool, videoID, version, model st
 			return fmt.Errorf("persistence: remove stale chunks: %w", err)
 		}
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO video_processing(video_id,status,processing_version,model_version,last_error,chunk_count,started_at,completed_at,updated_at) VALUES($1,'completed',$2,$3,NULL,$4,now(),now(),now()) ON CONFLICT(video_id) DO UPDATE SET status='completed',processing_version=EXCLUDED.processing_version,model_version=EXCLUDED.model_version,last_error=NULL,chunk_count=EXCLUDED.chunk_count,completed_at=now(),updated_at=now()`, videoID, version, model, len(chunks)); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO video_processing(video_id,status,stage,progress_percent,processing_version,model_version,last_error,chunk_count,cue_count,embedding_count,started_at,completed_at,updated_at) VALUES($1,'completed','complete',100,$2,$3,NULL,$4,$5,$4,now(),now(),now()) ON CONFLICT(video_id) DO UPDATE SET status='completed',stage='complete',progress_percent=100,processing_version=EXCLUDED.processing_version,model_version=EXCLUDED.model_version,last_error=NULL,chunk_count=EXCLUDED.chunk_count,cue_count=EXCLUDED.cue_count,embedding_count=EXCLUDED.embedding_count,completed_at=now(),updated_at=now()`, videoID, version, model, len(chunks), len(chunks)); err != nil {
 		return fmt.Errorf("persistence: mark processing complete: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -101,13 +107,31 @@ func vectorLiteral(v []float32) string {
 }
 
 func SetProcessing(ctx context.Context, p *pgxpool.Pool, id, status, version, model string, lastErr *string) error {
-	_, err := p.Exec(ctx, `INSERT INTO video_processing(video_id,status,processing_version,model_version,last_error,started_at,updated_at) VALUES($1,$2,$3,$4,$5,CASE WHEN $2='processing' THEN now() END,now()) ON CONFLICT(video_id) DO UPDATE SET status=EXCLUDED.status,processing_version=EXCLUDED.processing_version,model_version=EXCLUDED.model_version,last_error=EXCLUDED.last_error,started_at=CASE WHEN EXCLUDED.status='processing' THEN now() ELSE video_processing.started_at END,updated_at=now()`, id, status, version, model, lastErr)
+	stage, progress := "queued", 0
+	if status == "processing" {
+		stage, progress = "chunking", 55
+	} else if status == "failed" {
+		stage = "failed"
+	}
+	_, err := p.Exec(ctx, `INSERT INTO video_processing(video_id,status,stage,progress_percent,processing_version,model_version,last_error,started_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $2='processing' THEN now() END,now()) ON CONFLICT(video_id) DO UPDATE SET status=EXCLUDED.status,stage=EXCLUDED.stage,progress_percent=EXCLUDED.progress_percent,processing_version=EXCLUDED.processing_version,model_version=EXCLUDED.model_version,last_error=EXCLUDED.last_error,started_at=CASE WHEN EXCLUDED.status='processing' THEN now() ELSE video_processing.started_at END,updated_at=now()`, id, status, stage, progress, version, model, lastErr)
+	return err
+}
+
+func UpdateProcessingProgress(ctx context.Context, p *pgxpool.Pool, id, stage string, progress, cues, embeddings int) error {
+	_, err := p.Exec(ctx, `UPDATE video_processing SET stage=$2,progress_percent=$3,cue_count=$4,embedding_count=$5,updated_at=now() WHERE video_id=$1`, id, stage, progress, cues, embeddings)
 	return err
 }
 
 func GetProcessing(ctx context.Context, p *pgxpool.Pool, id string) (ProcessingState, error) {
 	var s ProcessingState
-	err := p.QueryRow(ctx, `SELECT video_id,status,processing_version,model_version,last_error,chunk_count FROM video_processing WHERE video_id=$1`, id).Scan(&s.VideoID, &s.Status, &s.ProcessingVersion, &s.ModelVersion, &s.LastError, &s.ChunkCount)
+	err := p.QueryRow(ctx, `SELECT video_id,status,stage,progress_percent,cue_count,embedding_count,processing_version,model_version,last_error,chunk_count FROM video_processing WHERE video_id=$1`, id).Scan(&s.VideoID, &s.Status, &s.Stage, &s.ProgressPercent, &s.CueCount, &s.EmbeddingCount, &s.ProcessingVersion, &s.ModelVersion, &s.LastError, &s.ChunkCount)
+	if errors.Is(err, pgx.ErrNoRows) {
+		var videoStatus string
+		if videoErr := p.QueryRow(ctx, `SELECT status FROM videos WHERE id=$1`, id).Scan(&videoStatus); videoErr != nil {
+			return s, err
+		}
+		return ProcessingState{VideoID: id, Status: "pending", Stage: "queued", ProgressPercent: 40}, nil
+	}
 	return s, err
 }
 

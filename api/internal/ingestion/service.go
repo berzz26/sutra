@@ -118,19 +118,19 @@ type SubtitleOption struct {
 
 // DiscoverYouTubeSubtitles fetches metadata without downloading a subtitle or
 // media file and returns only compatible VTT/SRT tracks.
-func (s *Service) DiscoverYouTubeSubtitles(ctx context.Context, rawURL string) (string, string, []SubtitleOption, error) {
+func (s *Service) DiscoverYouTubeSubtitles(ctx context.Context, rawURL string) (*Metadata, []SubtitleOption, error) {
 	ref, err := ParseYouTubeURL(rawURL)
 	if err != nil {
-		return "", "", nil, URLValidationError(err)
+		return nil, nil, URLValidationError(err)
 	}
 	s.limiter <- struct{}{}
 	defer func() { <-s.limiter }()
 	meta, err := s.extractor.FetchMetadata(ctx, ref.CanonicalURL)
 	if err != nil {
-		return "", "", nil, err
+		return nil, nil, err
 	}
-	options := manualSubtitleOptions(meta)
-	return meta.ID, meta.Title, options, nil
+	options := subtitleOptions(meta)
+	return meta, options, nil
 }
 
 // IngestUpload ingests an uploaded VTT/SRT transcript.

@@ -39,10 +39,16 @@ func (s *Service) Process(ctx context.Context, id string) error {
 		return s.fail(ctx, id, err)
 	}
 	slog.Info("transcript processing cues loaded", "video_id", id, "cues", len(cues))
+	if err := persistence.UpdateProcessingProgress(ctx, s.pool, id, "chunking", 60, len(cues), 0); err != nil {
+		return s.fail(ctx, id, err)
+	}
 	chunks := BuildChunks(id, cues, s.cfg)
 	texts := make([]string, len(chunks))
 	for i, c := range chunks {
 		texts[i] = c.Text
+	}
+	if err := persistence.UpdateProcessingProgress(ctx, s.pool, id, "embedding", 70, len(cues), 0); err != nil {
+		return s.fail(ctx, id, err)
 	}
 	vectors, err := s.embedder.Embed(ctx, texts)
 	if err != nil {
@@ -51,6 +57,9 @@ func (s *Service) Process(ctx context.Context, id string) error {
 	records := make([]persistence.ChunkRecord, len(chunks))
 	for i, c := range chunks {
 		records[i] = persistence.ChunkRecord{ID: c.ID, VideoID: c.VideoID, Sequence: c.Sequence, StartMs: c.StartMs, EndMs: c.EndMs, Text: c.Text, WordCount: c.WordCount}
+	}
+	if err := persistence.UpdateProcessingProgress(ctx, s.pool, id, "saving", 95, len(cues), len(vectors)); err != nil {
+		return s.fail(ctx, id, err)
 	}
 	if err = persistence.SaveChunks(ctx, s.pool, id, s.cfg.Version, s.model, records, vectors); err != nil {
 		return s.fail(ctx, id, err)
