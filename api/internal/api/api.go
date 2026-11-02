@@ -7,16 +7,18 @@ import (
 
 	"github.com/berzz/searcher/backend/internal/ingestion"
 	"github.com/berzz/searcher/backend/internal/processing"
+	"github.com/berzz/searcher/backend/internal/retrieval"
 )
 
 type Handlers struct {
 	pool      *pgxpool.Pool
 	service   *ingestion.Service
 	processor *processing.Service
+	retriever *retrieval.Service
 }
 
-func New(pool *pgxpool.Pool, service *ingestion.Service, processor *processing.Service) *Handlers {
-	return &Handlers{pool: pool, service: service, processor: processor}
+func New(pool *pgxpool.Pool, service *ingestion.Service, processor *processing.Service, retriever *retrieval.Service) *Handlers {
+	return &Handlers{pool: pool, service: service, processor: processor, retriever: retriever}
 }
 
 func (h *Handlers) Register(app *fiber.App) {
@@ -28,6 +30,7 @@ func (h *Handlers) Register(app *fiber.App) {
 	api := app.Group("/api")
 	v1 := api.Group("/v1")
 	v1.Get("/health", h.healthz)
+	v1.Post("/search", h.search)
 
 	v1.Post("/videos", h.ingestYouTube)
 	v1.Post("/transcripts", h.uploadTranscript)

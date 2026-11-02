@@ -97,6 +97,9 @@ Environment variables (all options documented in `.env.example` and
 | `EMBEDDING_*` / `ONNXRUNTIME_SHARED_LIBRARY_PATH` | no | Local BGE-small ONNX model, tokenizer, batching, and timeout settings |
 | `PROCESSING_WORKERS` | no | In-process PostgreSQL queue worker concurrency (default 2) |
 | `SHUTDOWN_TIMEOUT_SECONDS` | no | Graceful HTTP/worker shutdown budget (default 15 seconds) |
+| `SEARCH_CANDIDATE_POOL` | no | Candidates retrieved independently per search method (default 100) |
+| `SEARCH_RRF_K` | no | Reciprocal Rank Fusion smoothing constant (default 60) |
+| `SEARCH_TIMEOUT` | no | Query embedding and database search timeout (default 10s) |
 
 Verify:
 
@@ -181,6 +184,21 @@ go run ./cmd/backfill
 The command is repeatable and can be resumed after interruption. Startup
 requires pgvector; migration failure is reported clearly rather than falling
 back to text or JSON storage.
+
+## Search
+
+`POST /api/v1/search` accepts JSON such as:
+
+```json
+{"query":"How does database replication work?","limit":10}
+```
+
+Use `video_id` to restrict results to one video. Search embeds the query with
+the resident BGE model, retrieves vector candidates using cosine distance and
+lexical candidates using PostgreSQL English full-text search, then combines
+their ranks with RRF. The returned `score` is the RRF score, not a probability;
+`semantic_score` is cosine similarity (`1 - distance`) and `lexical_score` is
+PostgreSQL `ts_rank_cd` when that method returned the chunk.
 
 ## Documentation
 

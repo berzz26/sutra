@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { ApiError } from '../api/client'
-import { Cue, deleteVideo, getTranscript, ingestYouTube, listSubtitles, listVideos, SubtitleOption, uploadTranscript, Video } from '../api/endpoints'
+import { Cue, deleteVideo, getTranscript, ingestYouTube, listSubtitles, listVideos, SearchResult, search, SubtitleOption, uploadTranscript, Video } from '../api/endpoints'
 
 export function SearchPage() {
   const [videos, setVideos] = useState<Video[]>([])
@@ -8,6 +8,7 @@ export function SearchPage() {
   const [subtitleOptions, setSubtitleOptions] = useState<SubtitleOption[]>([]); const [selectedSubtitle, setSelectedSubtitle] = useState('')
   const [file, setFile] = useState<File | null>(null); const [message, setMessage] = useState<string | null>(null); const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState<string | null>(null); const [cues, setCues] = useState<Cue[]>([])
+  const [searchQuery, setSearchQuery] = useState(''); const [searchResults, setSearchResults] = useState<SearchResult[]>([]); const [searching, setSearching] = useState(false); const [searchMessage, setSearchMessage] = useState<string | null>(null)
   const refresh = () => listVideos().then((result) => setVideos(result.videos))
   useEffect(() => { refresh().catch(() => undefined) }, [])
   const errorText = (cause: unknown) => cause instanceof ApiError ? cause.message : String(cause)
@@ -16,8 +17,13 @@ export function SearchPage() {
   const submitUpload = async (event: FormEvent) => { event.preventDefault(); if (!file) { setMessage('Choose a .vtt or .srt file.'); return }; setBusy(true); setMessage(null); try { const data = new FormData(); data.append('file', file); if (title) data.append('title', title); if (originalURL) data.append('original_url', originalURL); if (language) data.append('language', language); await uploadTranscript(data); setFile(null); setTitle(''); setOriginalURL(''); setMessage('Transcript uploaded.'); await refresh() } catch (cause) { setMessage(errorText(cause)) } finally { setBusy(false) } }
   const showTranscript = async (video: Video) => { if (open === video.id) { setOpen(null); return }; try { const result = await getTranscript(video.id); setCues(result.cues); setOpen(video.id) } catch (cause) { setMessage(errorText(cause)) } }
   const remove = async (id: string) => { if (!window.confirm('Delete this video and transcript?')) return; try { await deleteVideo(id); await refresh() } catch (cause) { setMessage(errorText(cause)) } }
+  const submitSearch = async (event: FormEvent) => { event.preventDefault(); if (!searchQuery.trim()) { setSearchMessage('Enter a search query.'); return }; setSearching(true); setSearchMessage(null); try { const result = await search(searchQuery); setSearchResults(result.results); if (result.results.length === 0) setSearchMessage('No indexed transcript matches found.') } catch (cause) { setSearchMessage(errorText(cause)); setSearchResults([]) } finally { setSearching(false) } }
   return <section>
-    <h1>Transcript ingestion</h1><p>Index videos that already have subtitles, or upload a transcript file.</p>
+    <h1>Search transcripts</h1><p>Search indexed transcript moments using natural language.</p>
+    <form className="search-form" onSubmit={submitSearch}><input aria-label="Search query" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="How does database replication work?" maxLength={2000} /><button disabled={searching}>{searching ? 'Searching…' : 'Search'}</button></form>
+    {searchMessage && <p className="message">{searchMessage}</p>}
+    {searchResults.length > 0 && <div className="search-results"><h2>Results</h2>{searchResults.map((result) => <article className="search-result" key={result.chunk_id}><div><strong>{result.video_title || 'Untitled video'}</strong><span>{formatMs(result.start_ms)} – {formatMs(result.end_ms)} · score {result.score.toFixed(4)}</span><p>{result.text}</p></div>{result.original_url && <a href={timestampURL(result.original_url, result.start_ms)} target="_blank" rel="noreferrer">Open moment</a>}</article>)}</div>}
+    <h2>Transcript ingestion</h2><p>Index videos that already have subtitles, or upload a transcript file.</p>
     <div className="forms">
       <form onSubmit={submitYouTube}><h2>YouTube URL</h2><input required value={url} onChange={(e) => { setUrl(e.target.value); setSubtitleOptions([]); setSelectedSubtitle('') }} placeholder="https://youtube.com/watch?v=…" /><button type="button" onClick={discoverSubtitles} disabled={busy}>List manual subtitles</button>{subtitleOptions.length > 0 && <select required value={selectedSubtitle} onChange={(e) => setSelectedSubtitle(e.target.value)}><option value="">Select a manual subtitle track</option>{subtitleOptions.map((option) => <option key={`${option.source}:${option.language}`} value={`${option.source}:${option.language}`}>{option.language}{option.name ? ` — ${option.name}` : ''} ({option.formats.join(', ')})</option>)}</select>}<input value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="Language preference (optional)" /><button disabled={busy}>Fetch selected transcript</button></form>
       <form onSubmit={submitUpload}><h2>Upload transcript</h2><input type="file" accept=".vtt,.srt" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title (optional)" /><input value={originalURL} onChange={(e) => setOriginalURL(e.target.value)} placeholder="Original YouTube URL (optional)" /><button disabled={busy}>Upload transcript</button></form>
@@ -27,3 +33,4 @@ export function SearchPage() {
   </section>
 }
 function formatMs(ms: number) { return `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}` }
+function timestampURL(raw: string, ms: number) { const url = new URL(raw); url.searchParams.set('t', String(Math.floor(ms / 1000))); return url.toString() }

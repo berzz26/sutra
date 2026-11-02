@@ -33,6 +33,13 @@ type Config struct {
 	Workers       int           // PROCESSING_WORKERS
 	Shutdown      time.Duration // SHUTDOWN_TIMEOUT
 	Embedding     EmbeddingConfig
+	Search        SearchConfig
+}
+
+type SearchConfig struct {
+	CandidatePool int
+	RRFK          int
+	Timeout       time.Duration
 }
 
 type EmbeddingConfig struct {
@@ -159,6 +166,23 @@ func Load() (*Config, error) {
 	}
 	if cfg.Embedding.MaxTokens > 512 {
 		return nil, fmt.Errorf("config: EMBEDDING_MAX_TOKENS cannot exceed 512")
+	}
+	cfg.Search.CandidatePool, err = getInt("SEARCH_CANDIDATE_POOL", 100)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Search.RRFK, err = getInt("SEARCH_RRF_K", 60)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Search.CandidatePool <= 0 || cfg.Search.RRFK <= 0 {
+		return nil, fmt.Errorf("config: SEARCH_CANDIDATE_POOL and SEARCH_RRF_K must be positive")
+	}
+	if cfg.Search.Timeout, err = time.ParseDuration(getenv("SEARCH_TIMEOUT", "10s")); err != nil {
+		return nil, fmt.Errorf("config: SEARCH_TIMEOUT: %w", err)
+	}
+	if cfg.Search.Timeout <= 0 {
+		return nil, fmt.Errorf("config: SEARCH_TIMEOUT must be positive")
 	}
 
 	return cfg, nil

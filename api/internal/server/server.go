@@ -19,6 +19,7 @@ import (
 	"github.com/berzz/searcher/backend/internal/api"
 	"github.com/berzz/searcher/backend/internal/ingestion"
 	"github.com/berzz/searcher/backend/internal/processing"
+	"github.com/berzz/searcher/backend/internal/retrieval"
 )
 
 type Server struct {
@@ -26,7 +27,7 @@ type Server struct {
 	addr string
 }
 
-func New(addr string, pool *pgxpool.Pool, service *ingestion.Service, processor *processing.Service, maxUploadBytes int64) *Server {
+func New(addr string, pool *pgxpool.Pool, service *ingestion.Service, processor *processing.Service, retriever *retrieval.Service, maxUploadBytes int64) *Server {
 	app := fiber.New(fiber.Config{
 		AppName:      "searcher",
 		BodyLimit:    int(maxUploadBytes) + 1024*1024,
@@ -36,7 +37,7 @@ func New(addr string, pool *pgxpool.Pool, service *ingestion.Service, processor 
 	app.Use(recover.New())
 	app.Use(requestid.New())
 
-	api.New(pool, service, processor).Register(app)
+	api.New(pool, service, processor, retriever).Register(app)
 
 	return &Server{app: app, addr: addr}
 }
@@ -97,6 +98,8 @@ func ingestionHTTPStatus(code string) int {
 	case ingestion.ErrCodeFileTooLarge:
 		return http.StatusRequestEntityTooLarge
 	case ingestion.ErrCodeMinioUploadFailed, ingestion.ErrCodePersistenceFailed:
+		return http.StatusInternalServerError
+	case ingestion.ErrCodeSearchFailed:
 		return http.StatusInternalServerError
 	case ingestion.ErrCodeVideoUnavailable, ingestion.ErrCodeVideoInaccessible, ingestion.ErrCodeNoTranscript, ingestion.ErrCodeLanguageUnavailable:
 		return http.StatusUnprocessableEntity

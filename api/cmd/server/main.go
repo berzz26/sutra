@@ -19,6 +19,7 @@ import (
 	"github.com/berzz/searcher/backend/internal/jobs"
 	"github.com/berzz/searcher/backend/internal/persistence"
 	"github.com/berzz/searcher/backend/internal/processing"
+	"github.com/berzz/searcher/backend/internal/retrieval"
 	"github.com/berzz/searcher/backend/internal/server"
 )
 
@@ -69,9 +70,10 @@ func run(ctx context.Context) error {
 	defer stop()
 
 	processor := processing.NewService(pool, emb, processing.ChunkConfig{Target: cfg.Embedding.TargetWords, Min: cfg.Embedding.MinWords, Max: cfg.Embedding.MaxWords, Overlap: cfg.Embedding.OverlapWords, Version: "v1"}, cfg.Embedding.Model+"/"+cfg.Embedding.Version, cfg.Embedding.Timeout)
+	retriever := retrieval.NewService(pool, emb, retrieval.Config{CandidatePool: cfg.Search.CandidatePool, RRFK: cfg.Search.RRFK, Timeout: cfg.Search.Timeout})
 	worker := jobs.NewWorker(pool, processor, cfg.Workers)
 	worker.Start(runCtx)
-	srv := server.New(cfg.Host+":"+cfg.Port, pool, service, processor, cfg.MaxUpload)
+	srv := server.New(cfg.Host+":"+cfg.Port, pool, service, processor, retriever, cfg.MaxUpload)
 
 	err = srv.Run(runCtx)
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.Shutdown)

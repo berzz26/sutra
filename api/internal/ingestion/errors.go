@@ -29,6 +29,8 @@ const (
 	ErrCodeMinioUploadFailed   = "MINIO_UPLOAD_FAILED"
 	ErrCodePersistenceFailed   = "DATABASE_PERSISTENCE_FAILED"
 	ErrCodeVideoNotFound       = "VIDEO_NOT_FOUND"
+	ErrCodeInvalidSearch       = "INVALID_SEARCH"
+	ErrCodeSearchFailed        = "SEARCH_FAILED"
 )
 
 // Error is the unified ingestion error: every failure carries a stable code
