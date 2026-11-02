@@ -30,6 +30,8 @@ type Config struct {
 	YTDLPTimeout  time.Duration // YTDLP_TIMEOUT_SECONDS (seconds)
 	MaxUpload     int64         // TRANSCRIPT_MAX_UPLOAD_MB (bytes beyond config)
 	MaxConcurrent int           // TRANSCRIPT_MAX_CONCURRENT_INGESTIONS
+	Workers       int           // PROCESSING_WORKERS
+	Shutdown      time.Duration // SHUTDOWN_TIMEOUT
 	Embedding     EmbeddingConfig
 }
 
@@ -47,6 +49,7 @@ type EmbeddingConfig struct {
 	MinWords      int
 	MaxWords      int
 	OverlapWords  int
+	MaxTokens     int
 }
 
 // ArtifactConfig describes the optional S3-compatible object store.
@@ -116,11 +119,22 @@ func Load() (*Config, error) {
 	if cfg.MaxConcurrent <= 0 {
 		return nil, fmt.Errorf("config: TRANSCRIPT_MAX_CONCURRENT_INGESTIONS must be positive")
 	}
+	cfg.Workers, err = getInt("PROCESSING_WORKERS", 2)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Workers <= 0 {
+		return nil, fmt.Errorf("config: PROCESSING_WORKERS must be positive")
+	}
+	cfg.Shutdown, err = getSeconds("SHUTDOWN_TIMEOUT_SECONDS", 15)
+	if err != nil {
+		return nil, err
+	}
 	cfg.Embedding = EmbeddingConfig{
 		Model: getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5"), Version: getenv("EMBEDDING_MODEL_VERSION", "v1.5"),
 		ONNXPath:      getenv("EMBEDDING_ONNX_PATH", "embedding/models/bge-small-en-v1.5/model.onnx"),
-		TokenizerPath: getenv("EMBEDDING_TOKENIZER_PATH", "embedding/models/bge-small-en-v1.5/tokenizer.json"), RuntimePath: getenv("ONNXRUNTIME_SHARED_LIBRARY_PATH", ""), Dimensions: 384,
-		BatchSize: 32, Threads: 4, Timeout: 5 * time.Minute,
+		TokenizerPath: getenv("EMBEDDING_TOKENIZER_PATH", "embedding/models/bge-small-en-v1.5/tokenizer.json"), RuntimePath: getenv("ONNXRUNTIME_SHARED_LIBRARY_PATH", "third_party/onnxruntime/onnxruntime-linux-x64-1.31.1/lib/libonnxruntime.so"), Dimensions: 384,
+		BatchSize: 32, Threads: 4, Timeout: 5 * time.Minute, MaxTokens: 512,
 		TargetWords: 180, MinWords: 80, MaxWords: 250, OverlapWords: 30,
 	}
 	if cfg.Embedding.Dimensions, err = getInt("EMBEDDING_DIMENSIONS", 384); err != nil {
@@ -132,13 +146,19 @@ func Load() (*Config, error) {
 	if cfg.Embedding.Threads, err = getInt("EMBEDDING_ONNX_THREADS", 4); err != nil {
 		return nil, err
 	}
+	if cfg.Embedding.MaxTokens, err = getInt("EMBEDDING_MAX_TOKENS", 512); err != nil {
+		return nil, err
+	}
 	if cfg.Embedding.Timeout, err = time.ParseDuration(getenv("EMBEDDING_TIMEOUT", "5m")); err != nil {
 		return nil, fmt.Errorf("config: EMBEDDING_TIMEOUT: %w", err)
 	}
-	for name, value := range map[string]int{"EMBEDDING_DIMENSIONS": cfg.Embedding.Dimensions, "EMBEDDING_BATCH_SIZE": cfg.Embedding.BatchSize, "EMBEDDING_ONNX_THREADS": cfg.Embedding.Threads} {
+	for name, value := range map[string]int{"EMBEDDING_DIMENSIONS": cfg.Embedding.Dimensions, "EMBEDDING_BATCH_SIZE": cfg.Embedding.BatchSize, "EMBEDDING_ONNX_THREADS": cfg.Embedding.Threads, "EMBEDDING_MAX_TOKENS": cfg.Embedding.MaxTokens} {
 		if value <= 0 {
 			return nil, fmt.Errorf("config: %s must be positive", name)
 		}
+	}
+	if cfg.Embedding.MaxTokens > 512 {
+		return nil, fmt.Errorf("config: EMBEDDING_MAX_TOKENS cannot exceed 512")
 	}
 
 	return cfg, nil

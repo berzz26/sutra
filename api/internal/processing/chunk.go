@@ -1,7 +1,7 @@
 package processing
 
 import (
-	"regexp"
+	"fmt"
 	"strings"
 	"unicode"
 
@@ -22,63 +22,110 @@ type ChunkConfig struct {
 	Version                   string
 }
 
-var sentenceBreak = regexp.MustCompile(`([.!?])\s+`)
-
+// BuildChunks groups complete cues. Overlap is made from complete cues too,
+// so no subtitle cue is ever cut in the middle of a chunk.
 func BuildChunks(videoID string, cues []domain.TranscriptCue, cfg ChunkConfig) []Chunk {
-	var sentences []domain.TranscriptCue
+	cfg = normalizedChunkConfig(cfg)
+	clean := make([]domain.TranscriptCue, 0, len(cues))
 	for _, cue := range cues {
-		text := strings.TrimSpace(cue.Text)
+		text := normalizeCueText(cue.Text)
 		if text == "" {
 			continue
 		}
-		parts := sentenceBreak.Split(text, -1)
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				sentences = append(sentences, domain.TranscriptCue{StartMs: cue.StartMs, EndMs: cue.EndMs, Text: p})
-			}
-		}
+		cue.VideoID = videoID
+		cue.Text = text
+		clean = append(clean, cue)
 	}
-	var out []Chunk
-	var group []domain.TranscriptCue
+	if len(clean) == 0 {
+		return nil
+	}
+
+	cores := make([][]domain.TranscriptCue, 0)
+	current := make([]domain.TranscriptCue, 0)
 	words := 0
 	flush := func() {
-		if len(group) == 0 {
+		if len(current) == 0 {
 			return
 		}
-		parts := make([]string, len(group))
-		for i, c := range group {
-			parts[i] = c.Text
-		}
-		text := strings.Join(parts, " ")
-		out = append(out, Chunk{ID: uuid.NewString(), VideoID: videoID, Sequence: len(out) + 1, StartMs: group[0].StartMs, EndMs: group[len(group)-1].EndMs, Text: text, WordCount: len(strings.Fields(text))})
-		group = nil
+		cores = append(cores, current)
+		current = nil
 		words = 0
 	}
-	for _, s := range sentences {
-		n := len(strings.Fields(s.Text))
-		if len(group) > 0 && words+n > cfg.Max && words >= cfg.Min {
+	for _, cue := range clean {
+		n := wordCount(cue.Text)
+		if len(current) > 0 && words+n > cfg.Max && words >= cfg.Min {
 			flush()
 		}
-		group = append(group, s)
+		current = append(current, cue)
 		words += n
 		if words >= cfg.Target {
 			flush()
 		}
 	}
 	flush()
-	if cfg.Overlap > 0 && len(out) > 1 {
-		for i := 1; i < len(out); i++ {
-			prior := strings.Fields(out[i-1].Text)
-			if len(prior) > cfg.Overlap {
-				prior = prior[len(prior)-cfg.Overlap:]
-			}
-			current := strings.Fields(out[i].Text)
-			out[i].Text = strings.Join(append(prior, current...), " ")
-			out[i].WordCount = len(strings.Fields(out[i].Text))
+
+	out := make([]Chunk, 0, len(cores))
+	for i, core := range cores {
+		members := core
+		if i > 0 && cfg.Overlap > 0 {
+			overlap := overlapCues(cores[i-1], cfg.Overlap)
+			members = make([]domain.TranscriptCue, 0, len(overlap)+len(core))
+			members = append(members, overlap...)
+			members = append(members, core...)
 		}
+		text := joinCueText(members)
+		if text == "" {
+			continue
+		}
+		start, end := members[0].StartMs, members[len(members)-1].EndMs
+		sequence := len(out) + 1
+		id := uuid.NewSHA1(uuid.Nil, []byte(fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%d\x00%s", videoID, cfg.Version, sequence, start, end, text))).String()
+		out = append(out, Chunk{ID: id, VideoID: videoID, Sequence: sequence, StartMs: start, EndMs: end, Text: text, WordCount: wordCount(text)})
 	}
 	return out
+}
+
+func normalizedChunkConfig(cfg ChunkConfig) ChunkConfig {
+	if cfg.Target <= 0 {
+		cfg.Target = 180
+	}
+	if cfg.Min <= 0 {
+		cfg.Min = 80
+	}
+	if cfg.Max < cfg.Target {
+		cfg.Max = cfg.Target
+	}
+	if cfg.Overlap < 0 {
+		cfg.Overlap = 0
+	}
+	return cfg
+}
+
+func overlapCues(previous []domain.TranscriptCue, target int) []domain.TranscriptCue {
+	if target <= 0 {
+		return nil
+	}
+	words := 0
+	start := len(previous)
+	for start > 0 && words < target {
+		start--
+		words += wordCount(previous[start].Text)
+	}
+	return previous[start:]
+}
+
+func normalizeCueText(text string) string {
+	return strings.Join(strings.FieldsFunc(text, unicode.IsSpace), " ")
+}
+
+func joinCueText(cues []domain.TranscriptCue) string {
+	parts := make([]string, 0, len(cues))
+	for _, cue := range cues {
+		if text := normalizeCueText(cue.Text); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 func wordCount(s string) int { return len(strings.FieldsFunc(s, unicode.IsSpace)) }

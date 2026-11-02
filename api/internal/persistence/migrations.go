@@ -87,6 +87,9 @@ func apply(ctx context.Context, pool *pgxpool.Pool, migrationsFS embed.FS, name 
 	}
 	if _, err := tx.Exec(ctx, string(sql)); err != nil {
 		_ = tx.Rollback(ctx)
+		if name == "0003_transcript_embeddings.sql" || name == "0004_processing_pipeline.sql" {
+			return fmt.Errorf("persistence: exec migration %s: pgvector is required; install the PostgreSQL pgvector extension and grant CREATE on the database: %w", name, err)
+		}
 		return fmt.Errorf("persistence: exec migration %s: %w", name, err)
 	}
 	if _, err := tx.Exec(ctx,

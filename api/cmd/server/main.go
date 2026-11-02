@@ -16,6 +16,7 @@ import (
 	"github.com/berzz/searcher/backend/internal/config"
 	"github.com/berzz/searcher/backend/internal/embedding"
 	"github.com/berzz/searcher/backend/internal/ingestion"
+	"github.com/berzz/searcher/backend/internal/jobs"
 	"github.com/berzz/searcher/backend/internal/persistence"
 	"github.com/berzz/searcher/backend/internal/processing"
 	"github.com/berzz/searcher/backend/internal/server"
@@ -51,7 +52,7 @@ func run(ctx context.Context) error {
 		return err
 	}
 	slog.Info("migrations applied")
-	emb, err := embedding.Load(embedding.Config{ModelPath: cfg.Embedding.ONNXPath, TokenizerPath: cfg.Embedding.TokenizerPath, RuntimePath: cfg.Embedding.RuntimePath, Dimensions: cfg.Embedding.Dimensions, BatchSize: cfg.Embedding.BatchSize})
+	emb, err := embedding.Load(embedding.Config{ModelPath: cfg.Embedding.ONNXPath, TokenizerPath: cfg.Embedding.TokenizerPath, RuntimePath: cfg.Embedding.RuntimePath, Dimensions: cfg.Embedding.Dimensions, BatchSize: cfg.Embedding.BatchSize, MaxTokens: cfg.Embedding.MaxTokens})
 	if err != nil {
 		return err
 	}
@@ -68,9 +69,16 @@ func run(ctx context.Context) error {
 	defer stop()
 
 	processor := processing.NewService(pool, emb, processing.ChunkConfig{Target: cfg.Embedding.TargetWords, Min: cfg.Embedding.MinWords, Max: cfg.Embedding.MaxWords, Overlap: cfg.Embedding.OverlapWords, Version: "v1"}, cfg.Embedding.Model+"/"+cfg.Embedding.Version, cfg.Embedding.Timeout)
+	worker := jobs.NewWorker(pool, processor, cfg.Workers)
+	worker.Start(runCtx)
 	srv := server.New(cfg.Host+":"+cfg.Port, pool, service, processor, cfg.MaxUpload)
 
 	err = srv.Run(runCtx)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.Shutdown)
+	defer shutdownCancel()
+	if stopErr := worker.Stop(shutdownCtx); stopErr != nil && err == nil {
+		err = fmt.Errorf("processing worker shutdown: %w", stopErr)
+	}
 	if err != nil {
 		return fmt.Errorf("server: %w", err)
 	}

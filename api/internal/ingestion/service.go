@@ -359,6 +359,10 @@ func (s *Service) persistCommon(ctx context.Context, videoID string, finalize pe
 	}
 
 	s.cleanArtifacts(ctx, supersededArtifactKeys)
+	if err := persistence.EnqueueEmbedding(ctx, s.pool, videoID); err != nil {
+		return persistence.VideoWithTranscript{}, WrapError(ErrCodePersistenceFailed, err, "failed to enqueue transcript processing")
+	}
+	slog.Info("transcript processing job created", "video_id", videoID, "cues", len(domainCues))
 
 	return s.getWithTranscript(ctx, videoID)
 }

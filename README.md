@@ -3,9 +3,10 @@
 Self-hostable semantic video search: submit a YouTube URL or upload a
 transcript, get back the moments that answer your natural-language query.
 
-**Status: Phase 1 — transcript ingestion.** The backend ingests YouTube videos
-that already expose manual or automatic subtitles and accepts VTT/SRT uploads.
-Embeddings, search, and reranking are later phases — see
+**Status: Phase 2 — transcript indexing.** The backend ingests YouTube videos
+that already expose manual or automatic subtitles and accepts VTT/SRT uploads,
+then asynchronously chunks and embeds transcripts locally. Semantic retrieval
+and reranking are later phases — see
 `docs/architecture.md` and `docs/knowledge.md`.
 
 ## Stack
@@ -93,6 +94,9 @@ Environment variables (all options documented in `.env.example` and
 | `YTDLP_TIMEOUT_SECONDS` | no | Per-command timeout (default 120) |
 | `TRANSCRIPT_MAX_UPLOAD_MB` | no | Upload limit (default 20 MB) |
 | `TRANSCRIPT_MAX_CONCURRENT_INGESTIONS` | no | Concurrent YouTube extractions (default 2) |
+| `EMBEDDING_*` / `ONNXRUNTIME_SHARED_LIBRARY_PATH` | no | Local BGE-small ONNX model, tokenizer, batching, and timeout settings |
+| `PROCESSING_WORKERS` | no | In-process PostgreSQL queue worker concurrency (default 2) |
+| `SHUTDOWN_TIMEOUT_SECONDS` | no | Graceful HTTP/worker shutdown budget (default 15 seconds) |
 
 Verify:
 
@@ -159,6 +163,24 @@ docker compose up --build -d
 
 `SIGINT`/`SIGTERM` stop the listener, drain in-flight requests (15s budget),
 then exit 0. The database pool is closed after the server drains.
+
+## Transcript backfill and processing
+
+Newly completed ingestions enqueue an `embed` job in PostgreSQL and return
+without waiting for ONNX inference. In-process workers claim jobs with
+`FOR UPDATE SKIP LOCKED`, retry transient failures up to five attempts with
+backoff, and upsert chunks by `(video_id, seq)` so retries are safe.
+
+To enqueue existing transcripts that have cues but no chunks, run this from
+the `api` directory:
+
+```sh
+go run ./cmd/backfill
+```
+
+The command is repeatable and can be resumed after interruption. Startup
+requires pgvector; migration failure is reported clearly rather than falling
+back to text or JSON storage.
 
 ## Documentation
 

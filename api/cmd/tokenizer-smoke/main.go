@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -53,4 +52,3 @@ func main() {
 	fmt.Println("\nToken count:", len(ids))
 	fmt.Println("SUCCESS: BGE tokenization executed successfully.")
 }
-

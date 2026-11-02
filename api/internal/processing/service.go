@@ -3,11 +3,13 @@ package processing
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"time"
+
 	"github.com/berzz/searcher/backend/internal/domain"
 	"github.com/berzz/searcher/backend/internal/embedding"
 	"github.com/berzz/searcher/backend/internal/persistence"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"time"
 )
 
 type Service struct {
@@ -22,8 +24,13 @@ func NewService(pool *pgxpool.Pool, e *embedding.Embedder, cfg ChunkConfig, mode
 	return &Service{pool: pool, embedder: e, cfg: cfg, model: model, timeout: timeout}
 }
 func (s *Service) Process(ctx context.Context, id string) error {
+	started := time.Now()
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
+	if state, err := persistence.GetProcessing(ctx, s.pool, id); err == nil && state.Status == "completed" && state.ProcessingVersion == s.cfg.Version && state.ModelVersion == s.model {
+		slog.Info("transcript processing already complete", "video_id", id, "chunks", state.ChunkCount)
+		return nil
+	}
 	if err := persistence.SetProcessing(ctx, s.pool, id, "processing", s.cfg.Version, s.model, nil); err != nil {
 		return err
 	}
@@ -31,6 +38,7 @@ func (s *Service) Process(ctx context.Context, id string) error {
 	if err != nil {
 		return s.fail(ctx, id, err)
 	}
+	slog.Info("transcript processing cues loaded", "video_id", id, "cues", len(cues))
 	chunks := BuildChunks(id, cues, s.cfg)
 	texts := make([]string, len(chunks))
 	for i, c := range chunks {
@@ -47,6 +55,7 @@ func (s *Service) Process(ctx context.Context, id string) error {
 	if err = persistence.SaveChunks(ctx, s.pool, id, s.cfg.Version, s.model, records, vectors); err != nil {
 		return s.fail(ctx, id, err)
 	}
+	slog.Info("transcript processing completed", "video_id", id, "cues", len(cues), "chunks", len(chunks), "embeddings", len(vectors), "duration", time.Since(started))
 	return nil
 }
 func (s *Service) fail(ctx context.Context, id string, cause error) error {
