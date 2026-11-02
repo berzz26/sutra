@@ -122,6 +122,14 @@ a requested language it prefers English and otherwise selects a deterministic
 available language. It downloads only the selected subtitle file; a video
 without subtitles returns `NO_TRANSCRIPT`.
 
+Subtitle selection preserves yt-dlp's exact language key. For an explicit
+language request, manual exact matches win first, followed by manual variants;
+automatic original-language keys such as `en-orig`/`hi-orig` then win over the
+regular generic key. Exact regional requests such as `en-US` remain more
+specific than generic `en-orig`, and remaining regional matches are selected
+deterministically. An unavailable requested language returns
+`LANGUAGE_UNAVAILABLE`.
+
 `POST /api/v1/transcripts` accepts multipart fields `file`, `title`,
 `original_url`, and `language`. The file must be valid VTT or SRT; without a
 title its filename is used. `GET /api/v1/videos`, `GET /api/v1/videos/:id`,
