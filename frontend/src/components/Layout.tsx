@@ -4,20 +4,20 @@ import { Link, NavLink, Outlet } from 'react-router-dom'
 import { Button } from './ui'
 
 export function Layout() {
-  const [dark, setDark] = useState(() => localStorage.getItem('searcher-theme') === 'dark')
+  const [dark, setDark] = useState(() => localStorage.getItem('sutra-theme') === 'dark')
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-    localStorage.setItem('searcher-theme', dark ? 'dark' : 'light')
+    localStorage.setItem('sutra-theme', dark ? 'dark' : 'light')
   }, [dark])
 
   return (
     <div className="app-shell">
       <header className="app-header">
         <div className="header-inner">
-          <Link to="/" className="brand" aria-label="Searcher home">
+          <Link to="/" className="brand" aria-label="Sutra home">
             <span className="brand-mark"><Video size={16} strokeWidth={2.5} /></span>
-            <span>searcher<span className="brand-dot">.</span></span>
+            <span>sutra<span className="brand-dot">.</span></span>
           </Link>
           <nav className="main-nav" aria-label="Primary navigation">
             <NavLink to="/" end><Search size={15} />Search</NavLink>

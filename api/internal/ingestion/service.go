@@ -217,7 +217,7 @@ func (s *Service) extractAndPersistYouTube(ctx context.Context, video domain.Vid
 		return persistence.VideoWithTranscript{}, err
 	}
 
-	dir, err := os.MkdirTemp("", "searcher-ingest-")
+	dir, err := os.MkdirTemp("", "sutra-ingest-")
 	if err != nil {
 		return persistence.VideoWithTranscript{}, WrapError(ErrCodeYTDLPFailed, err, "failed to create temp directory")
 	}

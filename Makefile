@@ -1,7 +1,7 @@
 .PHONY: build-backend run-backend compose-up compose-down test tidy
 
 build-api:
-	cd api && go build -o searcher ./cmd/server
+	cd api && go build -o sutra ./cmd/server
 
 # Loads variables from .env into the environment (requires .env; see .env.example).
 run-api:

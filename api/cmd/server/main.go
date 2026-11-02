@@ -1,4 +1,4 @@
-// Command server is the entry point of the searcher backend. It loads
+// Command server is the entry point of the Sutra backend. It loads
 // configuration, connects to PostgreSQL, runs schema migrations and starts
 // the HTTP server until termination signals arrive.
 package main

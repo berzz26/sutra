@@ -1,4 +1,4 @@
-# searcher
+# sutra
 
 Self-hostable semantic video search: submit a YouTube URL or upload a
 transcript, get back the moments that answer your natural-language query.
@@ -22,7 +22,7 @@ and reranking are later phases — see
 ## Repository structure
 
 ```
-searcher/
+sutra/
 ├── backend/
 │   ├── cmd/server/             entry point + embedded migrations
 │   │   ├── main.go
@@ -161,6 +161,10 @@ docker compose up --build -d
 - Frontend: http://localhost:4173 (proxies `/api` to the backend)
 - Backend: http://localhost:8080
 - Postgres: localhost:5432 (`searcher` / `searcher`), data in a named volume
+
+The product is named **Sutra**. Existing PostgreSQL credentials and the Go
+module path retain their `searcher` values for deployment and import
+compatibility.
 
 ## Graceful shutdown
 
