@@ -38,6 +38,14 @@ export class ApiClient {
     })
   }
 
+  postForm<T>(path: string, body: FormData): Promise<T> {
+    return this.request<T>(path, { method: 'POST', body })
+  }
+
+  delete<T>(path: string): Promise<T> {
+    return this.request<T>(path, { method: 'DELETE' })
+  }
+
   private async request<T>(path: string, init: RequestInit): Promise<T> {
     let response: Response
     try {
@@ -59,9 +67,9 @@ export class ApiClient {
 
   private async readError(response: Response): Promise<string> {
     try {
-      const body = (await response.json()) as { error?: string }
+      const body = (await response.json()) as { error?: string; code?: string }
       if (body && typeof body.error === 'string') {
-        return body.error
+        return body.code ? `${body.code}: ${body.error}` : body.error
       }
     } catch {
       // fall through to generic message

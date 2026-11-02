@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/berzz/searcher/backend/internal/api"
+	"github.com/berzz/searcher/backend/internal/ingestion"
 )
 
 type Server struct {
@@ -24,16 +25,17 @@ type Server struct {
 	addr string
 }
 
-func New(addr string, pool *pgxpool.Pool) *Server {
+func New(addr string, pool *pgxpool.Pool, service *ingestion.Service, maxUploadBytes int64) *Server {
 	app := fiber.New(fiber.Config{
 		AppName:      "searcher",
+		BodyLimit:    int(maxUploadBytes) + 1024*1024,
 		ErrorHandler: errorHandler,
 	})
 
 	app.Use(recover.New())
 	app.Use(requestid.New())
 
-	api.New(pool).Register(app)
+	api.New(pool, service).Register(app)
 
 	return &Server{app: app, addr: addr}
 }
@@ -73,12 +75,35 @@ func (s *Server) Run(ctx context.Context) error {
 
 func errorHandler(c *fiber.Ctx, err error) error {
 	code := fiber.StatusInternalServerError
+	body := fiber.Map{"error": httpMessage(code)}
 	var fe *fiber.Error
 	if errors.As(err, &fe) {
 		code = fe.Code
 	}
+	var ie *ingestion.Error
+	if errors.As(err, &ie) {
+		code = ingestionHTTPStatus(ie.Code)
+		body = fiber.Map{"error": ie.Message, "code": ie.Code}
+	}
 	slog.Error("request failed", "request_id", c.Get("x-request-id"), "method", c.Method(), "path", c.Path(), "status", code, "error", err)
-	return c.Status(code).JSON(fiber.Map{"error": httpMessage(code)})
+	return c.Status(code).JSON(body)
+}
+
+func ingestionHTTPStatus(code string) int {
+	switch code {
+	case ingestion.ErrCodeVideoNotFound:
+		return http.StatusNotFound
+	case ingestion.ErrCodeFileTooLarge:
+		return http.StatusRequestEntityTooLarge
+	case ingestion.ErrCodeMinioUploadFailed, ingestion.ErrCodePersistenceFailed:
+		return http.StatusInternalServerError
+	case ingestion.ErrCodeVideoUnavailable, ingestion.ErrCodeVideoInaccessible, ingestion.ErrCodeNoTranscript, ingestion.ErrCodeLanguageUnavailable:
+		return http.StatusUnprocessableEntity
+	case ingestion.ErrCodeYTDLPRateLimited:
+		return http.StatusTooManyRequests
+	default:
+		return http.StatusBadRequest
+	}
 }
 
 func httpMessage(code int) string {
