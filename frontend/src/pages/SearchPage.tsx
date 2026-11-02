@@ -3,7 +3,7 @@ import { ArrowUpRight, Check, Clock3, FileText, FolderOpen, Loader2, Search as S
 import { toast } from 'sonner'
 import { ApiError } from '../api/client'
 import { Cue, deleteVideo, getProcessing, getTranscript, ingestYouTube, listSubtitles, listVideos, ProcessingState, SearchResult, search, SubtitleOption, uploadTranscript, Video as VideoRecord, YouTubeMetadata } from '../api/endpoints'
-import { AlertDialog, Badge, Button, Card, Input, Separator, Skeleton } from '../components/ui'
+import { AlertDialog, Badge, Button, Card, Dialog, Input, Separator, Skeleton } from '../components/ui'
 
 export function SearchPage() {
   const [videos, setVideos] = useState<VideoRecord[]>([])
@@ -25,6 +25,7 @@ export function SearchPage() {
   const [searching, setSearching] = useState(false)
   const [searchDuration, setSearchDuration] = useState<{ client: number; server: number } | null>(null)
   const [searchMessage, setSearchMessage] = useState<string | null>(null)
+  const [momentVideoId, setMomentVideoId] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
   const [cues, setCues] = useState<Cue[]>([])
   const [deleteTarget, setDeleteTarget] = useState<VideoRecord | null>(null)
@@ -96,6 +97,8 @@ export function SearchPage() {
     try { const result = await search(searchQuery); setSearchResults(result.results); setSearchDuration({ client: Math.round(performance.now() - started), server: result.duration_ms }); if (result.results.length === 0) setSearchMessage('No indexed transcript matches found. Try a broader phrase.') } catch (cause) { setSearchMessage(errorText(cause)); setSearchResults([]); toast.error(errorText(cause)) } finally { setSearching(false) }
   }
 
+  const resultGroups = groupSearchResults(searchResults, videos)
+
   return <>
     <section className="hero-section">
       <div className="hero-copy"><p className="eyebrow">Your archive, understood</p><h1>Find the moment<br /><em>that matters.</em></h1><p className="hero-description">Search every indexed conversation, lecture, and idea in your video library using natural language.</p></div>
@@ -113,12 +116,15 @@ export function SearchPage() {
       {!searchResults.length && !searchDuration && !searchMessage && <div className="search-hint"><span>Try a question</span><button type="button" onClick={() => setSearchQuery('How does database replication work?')}>“How does database replication work?”</button><span className="hint-separator">or</span><button type="button" onClick={() => setSearchQuery('Find the part where they discuss the future of AI')}>“Find the part where they discuss the future of AI”</button></div>}
     </section>
 
-    {(searchDuration || searchMessage || searchResults.length > 0) && <section className="results-section" aria-live="polite">
-      <div className="section-heading"><div><p className="eyebrow">Semantic retrieval</p><h2>{searchResults.length ? 'Relevant moments' : 'Search complete'}</h2></div>{searchDuration && <div className="search-metrics"><strong>{searchResults.length}</strong> matches <span className="metric-divider" /> resolved in <strong>{searchDuration.client} ms</strong><small></small></div>}</div>
-      {searchMessage && <div className="empty-state"><SearchIcon size={20} /><p>{searchMessage}</p></div>}
-      <div className="results-list">{searchResults.map((result, index) => <ResultCard key={result.chunk_id} result={result} query={searchQuery} index={index} />)}</div>
+    {(searching || searchDuration || searchMessage || searchResults.length > 0) && <section className="results-section" aria-live="polite">
+      <div className="section-heading"><div><p className="eyebrow">Semantic discovery</p><h2>Relevant moments</h2></div>{searchDuration && <div className="search-metrics"><strong>{searchResults.length}</strong> moments <span className="metric-divider" /><strong>{resultGroups.length}</strong> videos <span className="metric-divider" /> resolved in <strong>{searchDuration.client} ms</strong></div>}</div>
+      {searching && <div className="discovery-grid">{[0, 1, 2].map((value) => <Skeleton className="discovery-skeleton" key={value} />)}</div>}
+      {!searching && searchMessage && <div className="empty-state"><SearchIcon size={20} /><p>{searchMessage}</p></div>}
+      {!searching && resultGroups.length > 0 && <div className="discovery-grid">{resultGroups.map((group, index) => <DiscoveryCard key={group.videoId} group={group} query={searchQuery} index={index} onExplore={() => setMomentVideoId(group.videoId)} />)}</div>}
     </section>}
-
+    <Dialog open={momentVideoId !== null} title={resultGroups.find((group) => group.videoId === momentVideoId)?.title || 'Matching moments'} onClose={() => setMomentVideoId(null)}>
+      <div className="moment-list">{resultGroups.find((group) => group.videoId === momentVideoId)?.moments.map((moment) => <MomentRow key={moment.chunk_id} result={moment} query={searchQuery} />)}</div>
+    </Dialog>
     <Separator />
     <section className="ingest-section" aria-labelledby="ingest-heading"><div className="section-heading"><div><p className="eyebrow">Build your library</p><h2 id="ingest-heading">Bring in a new source</h2></div><p className="section-description">Sutra turns captions into timestamped, searchable moments. Everything stays on this machine.</p></div>
       <Card className="ingest-card unified-ingest-card">
@@ -136,8 +142,36 @@ export function SearchPage() {
   </>
 }
 
-function ResultCard({ result, query, index }: { result: SearchResult; query: string; index: number }) {
-  return <article className="result-card" style={{ '--delay': `${index * 55}ms` } as CSSProperties}><div className="result-index">{String(index + 1).padStart(2, '0')}</div><div className="result-content"><div className="result-topline"><Badge tone="accent"><Clock3 size={12} /> {formatMs(result.start_ms)} – {formatMs(result.end_ms)}</Badge><span className="result-score">{Math.round(result.score * 100)}% relevance</span></div><h3>{result.video_title || 'Untitled video'}</h3><p className="result-excerpt"><Highlight text={result.text} query={query} /></p><div className="result-footer"><span><Video size={13} /> </span><a href={result.timestamp_url || result.original_url || '#'} target="_blank" rel="noreferrer">Open moment <ArrowUpRight size={14} /></a></div></div></article>
+interface ResultGroup { videoId: string; title: string; originalURL?: string; thumbnailURL?: string; moments: SearchResult[] }
+
+function groupSearchResults(results: SearchResult[], videos: VideoRecord[]): ResultGroup[] {
+  const videoByID = new Map(videos.map((video) => [video.id, video]))
+  const groups = new Map<string, ResultGroup>()
+  for (const result of results) {
+    const video = videoByID.get(result.video_id)
+    const group = groups.get(result.video_id) ?? { videoId: result.video_id, title: result.video_title || video?.title || 'Untitled video', originalURL: result.original_url || video?.original_url, thumbnailURL: video?.thumbnail_url, moments: [] }
+    group.moments.push(result)
+    groups.set(result.video_id, group)
+  }
+  return [...groups.values()]
+}
+
+function DiscoveryCard({ group, query, index, onExplore }: { group: ResultGroup; query: string; index: number; onExplore: () => void }) {
+  const [expanded, setExpanded] = useState(false)
+  const moment = group.moments[0]
+  const link = moment.timestamp_url || moment.original_url || group.originalURL || '#'
+  return <article className="discovery-card" style={{ '--delay': `${index * 55}ms` } as CSSProperties}><a className="discovery-link" href={link} target="_blank" rel="noreferrer"><div className="thumbnail-frame"><Thumbnail src={group.thumbnailURL} /><Badge tone="accent"><Clock3 size={12} /> {formatMs(moment.start_ms)}</Badge></div><div className="discovery-copy"><h3>{group.title}</h3><p className={`discovery-excerpt ${expanded ? 'expanded' : ''}`}><Highlight text={moment.text} query={query} /></p></div></a><div className="discovery-footer"><span><Clock3 size={13} /> {formatMs(moment.start_ms)} – {formatMs(moment.end_ms)}</span><div className="discovery-actions">{moment.text.length > 220 && <Button type="button" variant="ghost" size="sm" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Less' : 'More'}</Button>}{group.moments.length > 1 ? <Button type="button" variant="ghost" size="sm" onClick={onExplore}>{group.moments.length - 1} more moment{group.moments.length === 2 ? '' : 's'}</Button> : <a href={link} target="_blank" rel="noreferrer">Open moment <ArrowUpRight size={14} /></a>}</div></div></article>
+}
+
+function Thumbnail({ src }: { src?: string }) {
+  const [failed, setFailed] = useState(!src)
+  if (failed || !src) return <div className="thumbnail-fallback"><Video size={25} /><span>Video moment</span></div>
+  return <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} />
+}
+
+function MomentRow({ result, query }: { result: SearchResult; query: string }) {
+  const link = result.timestamp_url || result.original_url || '#'
+  return <div className="moment-row"><div><Badge tone="accent"><Clock3 size={12} /> {formatMs(result.start_ms)} – {formatMs(result.end_ms)}</Badge><p><Highlight text={result.text} query={query} /></p></div><a href={link} target="_blank" rel="noreferrer">Open <ArrowUpRight size={14} /></a></div>
 }
 
 function VideoCard({ video, open, cues, onToggle, onDelete }: { video: VideoRecord; open: boolean; cues: Cue[]; onToggle: () => void; onDelete: () => void }) {

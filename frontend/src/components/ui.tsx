@@ -37,6 +37,11 @@ export function Spinner() {
   return <span className="ui-spinner" aria-hidden="true" />
 }
 
+export function Dialog({ open, title, onClose, children }: { open: boolean; title: string; onClose: () => void; children: ReactNode }) {
+  if (!open) return null
+  return <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}><div className="dialog-panel dialog-wide" role="dialog" aria-modal="true" aria-labelledby="dialog-heading" onMouseDown={(event) => event.stopPropagation()}><div className="dialog-heading"><h2 id="dialog-heading">{title}</h2><Button variant="ghost" size="icon" aria-label="Close dialog" onClick={onClose}>×</Button></div>{children}</div></div>
+}
+
 interface AlertDialogProps {
   open: boolean
   title: string

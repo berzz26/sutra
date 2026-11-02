@@ -6,7 +6,7 @@ export function getHealth(): Promise<HealthStatus> {
 }
 
 export interface Transcript { id: string; video_id: string; extraction_method: string; original_format: string; language?: string; cue_count: number }
-export interface Video { id: string; source_type: 'youtube' | 'upload'; source_ref: string; title?: string; original_url?: string; duration_ms?: number; channel?: string; language?: string; status: string; created_at: string; transcript?: Transcript }
+export interface Video { id: string; source_type: 'youtube' | 'upload'; source_ref: string; title?: string; original_url?: string; thumbnail_url?: string; duration_ms?: number; channel?: string; language?: string; status: string; created_at: string; transcript?: Transcript }
 export interface Cue { id: string; video_id: string; seq: number; start_ms: number; end_ms: number; text: string }
 export interface SubtitleOption { language: string; name?: string; source: 'manual' | 'automatic'; formats: string[]; original: boolean; translated: boolean }
 export interface YouTubeMetadata { video_id: string; title: string; thumbnail_url?: string; duration_ms?: number; channel?: string }
