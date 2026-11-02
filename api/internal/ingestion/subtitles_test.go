@@ -21,6 +21,16 @@ func TestSubtitleOptionsExposeSourcesAndFormats(t *testing.T) {
 	}
 }
 
+func TestSubtitleOptionsUseTrackURLToClassifyTranslation(t *testing.T) {
+	options := subtitleOptions(&Metadata{AutomaticCaptions: trackList{
+		"en": {{Ext: "vtt", URL: "https://example.test/caption"}},
+		"hi": {{Ext: "vtt", URL: "https://example.test/caption?tlang=hi"}},
+	}})
+	if !options[0].Original || options[0].Translated || options[1].Original || !options[1].Translated {
+		t.Fatalf("unexpected track classification: %+v", options)
+	}
+}
+
 func TestSubtitleOptionsIncludeAutomaticTracks(t *testing.T) {
 	options := subtitleOptions(&Metadata{
 		Subtitles:         trackList{"en": vttTrack()},

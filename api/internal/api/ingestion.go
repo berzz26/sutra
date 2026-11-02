@@ -49,6 +49,7 @@ func (h *Handlers) listSubtitles(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	available, translated := splitSubtitleOptions(subtitles)
 	return c.JSON(fiber.Map{
 		"video_id": meta.ID,
 		"title":    meta.Title,
@@ -59,8 +60,20 @@ func (h *Handlers) listSubtitles(c *fiber.Ctx) error {
 			"duration_ms":   int64(meta.Duration * 1000),
 			"channel":       firstNonEmptyText(meta.Channel, meta.Uploader),
 		},
-		"subtitles": subtitles,
+		"subtitles":            available,
+		"translated_subtitles": translated,
 	})
+}
+
+func splitSubtitleOptions(options []ingestion.SubtitleOption) (available, translated []ingestion.SubtitleOption) {
+	for _, option := range options {
+		if option.Translated {
+			translated = append(translated, option)
+			continue
+		}
+		available = append(available, option)
+	}
+	return available, translated
 }
 
 func firstNonEmptyText(values ...string) string {

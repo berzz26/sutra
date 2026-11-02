@@ -8,9 +8,9 @@ export function getHealth(): Promise<HealthStatus> {
 export interface Transcript { id: string; video_id: string; extraction_method: string; original_format: string; language?: string; cue_count: number }
 export interface Video { id: string; source_type: 'youtube' | 'upload'; source_ref: string; title?: string; original_url?: string; duration_ms?: number; channel?: string; language?: string; status: string; created_at: string; transcript?: Transcript }
 export interface Cue { id: string; video_id: string; seq: number; start_ms: number; end_ms: number; text: string }
-export interface SubtitleOption { language: string; name?: string; source: 'manual' | 'automatic'; formats: string[] }
+export interface SubtitleOption { language: string; name?: string; source: 'manual' | 'automatic'; formats: string[]; original: boolean; translated: boolean }
 export interface YouTubeMetadata { video_id: string; title: string; thumbnail_url?: string; duration_ms?: number; channel?: string }
-export interface SubtitleDiscovery { video_id: string; title: string; metadata: YouTubeMetadata; subtitles: SubtitleOption[] }
+export interface SubtitleDiscovery { video_id: string; title: string; metadata: YouTubeMetadata; subtitles: SubtitleOption[]; translated_subtitles: SubtitleOption[] }
 export interface ProcessingState { video_id: string; status: string; stage: string; progress_percent: number; cue_count: number; embedding_count: number; chunk_count: number; last_error?: string }
 export interface SearchResult {
   chunk_id: string

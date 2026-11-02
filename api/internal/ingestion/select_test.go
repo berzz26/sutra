@@ -18,7 +18,7 @@ func TestSelectSubtitleTrack(t *testing.T) {
 		language  string
 		manualOut bool
 	}{
-		{"original English automatic", nil, trackList{"en": vttTrack(), "en-orig": vttTrack()}, "en", "en-orig", false},
+		{"original English automatic", nil, trackList{"en": {{Ext: "vtt", URL: "https://example.test/caption?tlang=en"}}, "en-orig": vttTrack()}, "en", "en-orig", false},
 		{"regular English fallback", nil, trackList{"en": vttTrack()}, "en", "en", false},
 		{"manual wins", trackList{"en": vttTrack()}, trackList{"en-orig": vttTrack()}, "en", "en", true},
 		{"original only", nil, trackList{"en-orig": vttTrack()}, "en", "en-orig", false},
@@ -44,6 +44,28 @@ func TestSelectSubtitleTrackLanguageUnavailable(t *testing.T) {
 	var ingestionErr *Error
 	if !errors.As(err, &ingestionErr) || ingestionErr.Code != ErrCodeLanguageUnavailable {
 		t.Fatalf("got %v, want %s", err, ErrCodeLanguageUnavailable)
+	}
+}
+
+func TestDefaultSelectionSkipsTranslatedAutomaticTracks(t *testing.T) {
+	meta := &Metadata{AutomaticCaptions: trackList{
+		"hi": {{Ext: "vtt", URL: "https://example.test/caption?tlang=hi"}},
+		"en": {{Ext: "vtt", URL: "https://example.test/caption"}},
+	}}
+	selection, err := selectSubtitleTrack(meta, "")
+	if err != nil || selection.language != "en" {
+		t.Fatalf("got %+v, err=%v", selection, err)
+	}
+}
+
+func TestDefaultSelectionDoesNotUseTranslatedOnlyTrack(t *testing.T) {
+	meta := &Metadata{AutomaticCaptions: trackList{
+		"hi": {{Ext: "vtt", URL: "https://example.test/caption?tlang=hi"}},
+	}}
+	_, err := selectSubtitleTrack(meta, "")
+	var ingestionErr *Error
+	if !errors.As(err, &ingestionErr) || ingestionErr.Code != ErrCodeNoTranscript {
+		t.Fatalf("got %v, want %s", err, ErrCodeNoTranscript)
 	}
 }
 

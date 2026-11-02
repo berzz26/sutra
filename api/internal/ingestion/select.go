@@ -2,6 +2,7 @@ package ingestion
 
 import (
 	"log/slog"
+	"net/url"
 	"sort"
 	"strings"
 )
@@ -41,6 +42,9 @@ func selectSubtitleTrack(meta *Metadata, requested string) (subSelection, error)
 		}
 	}
 	for _, key := range sortedKeys(meta.AutomaticCaptions) {
+		if !automaticTrackIsOriginal(meta, key) {
+			continue
+		}
 		if selection, ok := autoTrack(meta, key); ok {
 			return selection, nil
 		}
@@ -69,15 +73,20 @@ func selectRequested(meta *Metadata, requested string) (subSelection, bool) {
 	}
 	// For a generic request, original automatic captions precede translated
 	// automatic captions. For regional requests they follow the exact match.
-	for _, key := range originalKeys(meta.AutomaticCaptions, base) {
+	for _, key := range originalAutomaticKeys(meta, base) {
 		if selection, ok := autoTrack(meta, key); ok {
 			return selection, true
 		}
 	}
-	if selection, ok := autoTrack(meta, base); ok {
-		return selection, true
+	if automaticTrackIsOriginal(meta, base) {
+		if selection, ok := autoTrack(meta, base); ok {
+			return selection, true
+		}
 	}
 	for _, key := range matchingKeys(meta.AutomaticCaptions, base, requested) {
+		if !automaticTrackIsOriginal(meta, key) {
+			continue
+		}
 		if selection, ok := autoTrack(meta, key); ok {
 			return selection, true
 		}
@@ -161,7 +170,43 @@ func subtitleOption(language, source string, entries []subtitleEntry) (SubtitleO
 		return SubtitleOption{}, false
 	}
 	sort.Strings(formats)
-	return SubtitleOption{Language: language, Name: name, Source: source, Formats: formats}, true
+	translated := source == "automatic" && automaticTrackIsTranslated(entries)
+	return SubtitleOption{
+		Language:   language,
+		Name:       name,
+		Source:     source,
+		Formats:    formats,
+		Original:   source == "automatic" && !translated,
+		Translated: translated,
+	}, true
+}
+
+// yt-dlp exposes the translation choice in the track URL as tlang. This uses
+// the extractor metadata itself instead of inferring meaning from a language
+// key or constructing a synthetic subtitle identifier.
+func automaticTrackIsTranslated(entries []subtitleEntry) bool {
+	for _, entry := range entries {
+		parsed, err := url.Parse(entry.URL)
+		if err != nil {
+			continue
+		}
+		if parsed.Query().Get("tlang") != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func automaticTrackIsOriginal(meta *Metadata, key string) bool {
+	entries, ok := meta.AutomaticCaptions[key]
+	if !ok {
+		actual, _, found := lookupTrack(meta.AutomaticCaptions, key)
+		if !found {
+			return false
+		}
+		entries = meta.AutomaticCaptions[actual]
+	}
+	return !automaticTrackIsTranslated(entries)
 }
 
 func languageBase(language string) string {
@@ -179,7 +224,7 @@ func matchingKeys(tracks trackList, base, exact string) []string {
 		if lower == exact {
 			continue
 		}
-		if lower == base || languageBase(lower) == base && !isOriginalKey(lower) {
+		if lower == base || languageBase(lower) == base {
 			ordered = append(ordered, key)
 		}
 	}
@@ -194,20 +239,16 @@ func matchingKeys(tracks trackList, base, exact string) []string {
 	return ordered
 }
 
-func originalKeys(tracks trackList, base string) []string {
-	keys := sortedKeys(tracks)
+func originalAutomaticKeys(meta *Metadata, base string) []string {
+	keys := sortedKeys(meta.AutomaticCaptions)
 	ordered := make([]string, 0, 2)
 	for _, key := range keys {
 		lower := strings.ToLower(key)
-		if lower == base+"-orig" || lower == base+"-original" {
+		if languageBase(lower) == base && automaticTrackIsOriginal(meta, key) {
 			ordered = append(ordered, key)
 		}
 	}
 	return ordered
-}
-
-func isOriginalKey(key string) bool {
-	return strings.HasSuffix(key, "-orig") || strings.HasSuffix(key, "-original")
 }
 
 func selectionSource(selection subSelection) string {

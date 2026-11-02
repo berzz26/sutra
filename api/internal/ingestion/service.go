@@ -110,10 +110,12 @@ func (s *Service) ingestYouTube(ctx context.Context, rawURL, language, track, so
 // SubtitleOption is an exact track exposed by yt-dlp metadata. Language is
 // intentionally not normalized so clients can submit keys such as en-orig.
 type SubtitleOption struct {
-	Language string   `json:"language"`
-	Name     string   `json:"name,omitempty"`
-	Source   string   `json:"source"`
-	Formats  []string `json:"formats"`
+	Language   string   `json:"language"`
+	Name       string   `json:"name,omitempty"`
+	Source     string   `json:"source"`
+	Formats    []string `json:"formats"`
+	Original   bool     `json:"original"`
+	Translated bool     `json:"translated"`
 }
 
 // DiscoverYouTubeSubtitles fetches metadata without downloading a subtitle or

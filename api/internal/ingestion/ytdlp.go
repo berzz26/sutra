@@ -28,6 +28,7 @@ type trackList map[string][]subtitleEntry
 type subtitleEntry struct {
 	Ext  string `json:"ext"`
 	Name string `json:"name"`
+	URL  string `json:"url"`
 }
 
 // subSelection records which subtitle track extraction picked.
