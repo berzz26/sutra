@@ -85,7 +85,7 @@ export function SearchPage() {
     </section>
 
     {(searchDuration || searchMessage || searchResults.length > 0) && <section className="results-section" aria-live="polite">
-      <div className="section-heading"><div><p className="eyebrow">Semantic retrieval</p><h2>{searchResults.length ? 'Relevant moments' : 'Search complete'}</h2></div>{searchDuration && <div className="search-metrics"><strong>{searchResults.length}</strong> matches <span className="metric-divider" /> resolved in <strong>{searchDuration.client} ms</strong><small>server {searchDuration.server} ms</small></div>}</div>
+      <div className="section-heading"><div><p className="eyebrow">Semantic retrieval</p><h2>{searchResults.length ? 'Relevant moments' : 'Search complete'}</h2></div>{searchDuration && <div className="search-metrics"><strong>{searchResults.length}</strong> matches <span className="metric-divider" /> resolved in <strong>{searchDuration.client} ms</strong><small></small></div>}</div>
       {searchMessage && <div className="empty-state"><SearchIcon size={20} /><p>{searchMessage}</p></div>}
       <div className="results-list">{searchResults.map((result, index) => <ResultCard key={result.chunk_id} result={result} query={searchQuery} index={index} />)}</div>
     </section>}
@@ -104,7 +104,7 @@ export function SearchPage() {
 }
 
 function ResultCard({ result, query, index }: { result: SearchResult; query: string; index: number }) {
-  return <article className="result-card" style={{ '--delay': `${index * 55}ms` } as CSSProperties}><div className="result-index">{String(index + 1).padStart(2, '0')}</div><div className="result-content"><div className="result-topline"><Badge tone="accent"><Clock3 size={12} /> {formatMs(result.start_ms)} – {formatMs(result.end_ms)}</Badge><span className="result-score">{Math.round(result.score * 100)}% relevance</span></div><h3>{result.video_title || 'Untitled video'}</h3><p className="result-excerpt"><Highlight text={result.text} query={query} /></p><div className="result-footer"><span><Video size={13} /> Video moment</span><a href={result.timestamp_url || result.original_url || '#'} target="_blank" rel="noreferrer">Open moment <ArrowUpRight size={14} /></a></div></div></article>
+  return <article className="result-card" style={{ '--delay': `${index * 55}ms` } as CSSProperties}><div className="result-index">{String(index + 1).padStart(2, '0')}</div><div className="result-content"><div className="result-topline"><Badge tone="accent"><Clock3 size={12} /> {formatMs(result.start_ms)} – {formatMs(result.end_ms)}</Badge><span className="result-score">{Math.round(result.score * 100)}% relevance</span></div><h3>{result.video_title || 'Untitled video'}</h3><p className="result-excerpt"><Highlight text={result.text} query={query} /></p><div className="result-footer"><span><Video size={13} /> </span><a href={result.timestamp_url || result.original_url || '#'} target="_blank" rel="noreferrer">Open moment <ArrowUpRight size={14} /></a></div></div></article>
 }
 
 function VideoCard({ video, open, cues, onToggle, onDelete }: { video: VideoRecord; open: boolean; cues: Cue[]; onToggle: () => void; onDelete: () => void }) {
