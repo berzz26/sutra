@@ -12,7 +12,9 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/berzz/searcher/backend/internal/artifact"
 	"github.com/berzz/searcher/backend/internal/config"
+	"github.com/berzz/searcher/backend/internal/ingestion"
 	"github.com/berzz/searcher/backend/internal/persistence"
 	"github.com/berzz/searcher/backend/internal/server"
 )
@@ -48,10 +50,17 @@ func run(ctx context.Context) error {
 	}
 	slog.Info("migrations applied")
 
+	store, err := artifact.StoreOrNoop(cfg.Artifact)
+	if err != nil {
+		return err
+	}
+	extractor := ingestion.NewExtractor(cfg.YTDLPBinary, cfg.YTDLPTimeout)
+	service := ingestion.NewService(pool, extractor, store, cfg.MaxUpload, cfg.MaxConcurrent)
+
 	runCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv := server.New(cfg.Host+":"+cfg.Port, pool)
+	srv := server.New(cfg.Host+":"+cfg.Port, pool, service, cfg.MaxUpload)
 
 	err = srv.Run(runCtx)
 	if err != nil {

@@ -4,14 +4,17 @@ package api
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/berzz/searcher/backend/internal/ingestion"
 )
 
 type Handlers struct {
-	pool *pgxpool.Pool
+	pool    *pgxpool.Pool
+	service *ingestion.Service
 }
 
-func New(pool *pgxpool.Pool) *Handlers {
-	return &Handlers{pool: pool}
+func New(pool *pgxpool.Pool, service *ingestion.Service) *Handlers {
+	return &Handlers{pool: pool, service: service}
 }
 
 func (h *Handlers) Register(app *fiber.App) {
@@ -24,5 +27,10 @@ func (h *Handlers) Register(app *fiber.App) {
 	v1 := api.Group("/v1")
 	v1.Get("/health", h.healthz)
 
-	// Application endpoints (submit videos, search) are added in later phases.
+	v1.Post("/videos", h.ingestYouTube)
+	v1.Post("/transcripts", h.uploadTranscript)
+	v1.Get("/videos", h.listVideos)
+	v1.Get("/videos/:id", h.getVideo)
+	v1.Get("/videos/:id/transcript", h.getTranscript)
+	v1.Delete("/videos/:id", h.deleteVideo)
 }

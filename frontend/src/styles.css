@@ -47,3 +47,15 @@ body {
   margin: 4rem auto;
   text-align: center;
 }
+
+input, button { font: inherit; padding: 0.55rem; }
+button { cursor: pointer; }
+.forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+form, article { display: grid; gap: 0.6rem; padding: 1rem; border: 1px solid #e5e5e5; border-radius: 8px; background: #fff; }
+.message { padding: 0.75rem; background: #fff5d6; border-radius: 6px; }
+.video-list { display: grid; gap: 0.75rem; }
+article { grid-template-columns: 1fr auto; }
+article span { display: block; color: #666; font-size: 0.9rem; margin-top: 0.25rem; }
+.cues { grid-column: 1 / -1; border-top: 1px solid #eee; padding-top: 0.5rem; }
+.cues p { margin: 0.35rem 0; }
+.cues small { color: #666; margin-right: 0.5rem; }

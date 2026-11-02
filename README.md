@@ -3,10 +3,9 @@
 Self-hostable semantic video search: submit a YouTube URL or upload a
 transcript, get back the moments that answer your natural-language query.
 
-**Status: Phase 0 — repository foundation.** The backend runs, connects to
-PostgreSQL, migrates its schema, serves health endpoints and shuts down
-gracefully. The frontend is an app shell wired to a health endpoint.
-Ingestion, embeddings, search, and reranking are later phases — see
+**Status: Phase 1 — transcript ingestion.** The backend ingests YouTube videos
+that already expose manual or automatic subtitles and accepts VTT/SRT uploads.
+Embeddings, search, and reranking are later phases — see
 `docs/architecture.md` and `docs/knowledge.md`.
 
 ## Stack
@@ -33,7 +32,7 @@ searcher/
 │   │   ├── domain/             plain business structs (video, cue, chunk, job)
 │   │   ├── persistence/        connection pool + migration runner
 │   │   ├── server/             Fiber app assembly, graceful shutdown
-│   │   ├── ingestion/          transcript ingestion (scaffold, later phase)
+│   │   ├── ingestion/          YouTube and VTT/SRT transcript ingestion
 │   │   ├── processing/         cues → search chunks (scaffold, later phase)
 │   │   ├── embedding/          BGE-small-en-v1.5 via ONNX (scaffold, later)
 │   │   ├── retrieval/          vector + text search (scaffold, later)
@@ -90,6 +89,10 @@ Environment variables (all options documented in `.env.example` and
 | `LOG_LEVEL` | no | `debug`/`info`/`warn`/`error` |
 | `ARTIFACT_STORE_ENABLED` | no | Enables MinIO/S3 settings |
 | `MINIO_*` | if enabled | Endpoint, keys, bucket, region, SSL flag |
+| `YTDLP_BINARY` | no | yt-dlp executable (default `yt-dlp`) |
+| `YTDLP_TIMEOUT_SECONDS` | no | Per-command timeout (default 120) |
+| `TRANSCRIPT_MAX_UPLOAD_MB` | no | Upload limit (default 20 MB) |
+| `TRANSCRIPT_MAX_CONCURRENT_INGESTIONS` | no | Concurrent YouTube extractions (default 2) |
 
 Verify:
 
@@ -109,6 +112,23 @@ npm run dev                  # http://localhost:5173, proxies /api to backend
 
 The status page (`http://localhost:5173/status`) proves the frontend ↔
 backend path works; it calls `/api/v1/health` and shows the result.
+
+## Transcript ingestion
+
+`POST /api/v1/videos` accepts `{"url":"https://youtu.be/VIDEO_ID", "language":"en"}`.
+The backend validates the URL, asks `yt-dlp` for metadata, prefers a matching
+manual subtitle track, then falls back to matching automatic captions. Without
+a requested language it prefers English and otherwise selects a deterministic
+available language. It downloads only the selected subtitle file; a video
+without subtitles returns `NO_TRANSCRIPT`.
+
+`POST /api/v1/transcripts` accepts multipart fields `file`, `title`,
+`original_url`, and `language`. The file must be valid VTT or SRT; without a
+title its filename is used. `GET /api/v1/videos`, `GET /api/v1/videos/:id`,
+`GET /api/v1/videos/:id/transcript`, and `DELETE /api/v1/videos/:id` provide
+the library, paginated raw cues, and cleanup operations. MinIO is optional:
+when enabled the original subtitle is stored under a transcript object key;
+when disabled structured cues still persist and the artifact key is null.
 
 ### One-command stack (Docker Compose)
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 )
 
 // Config holds all runtime configuration. Every field is explicit and
@@ -23,6 +24,12 @@ type Config struct {
 
 	// Artifact store (optional, used later for uploaded transcripts/media).
 	Artifact ArtifactConfig
+
+	// Ingestion
+	YTDLPBinary   string        // YTDLP_BINARY
+	YTDLPTimeout  time.Duration // YTDLP_TIMEOUT_SECONDS (seconds)
+	MaxUpload     int64         // TRANSCRIPT_MAX_UPLOAD_MB (bytes beyond config)
+	MaxConcurrent int           // TRANSCRIPT_MAX_CONCURRENT_INGESTIONS
 }
 
 // ArtifactConfig describes the optional S3-compatible object store.
@@ -72,6 +79,27 @@ func Load() (*Config, error) {
 		}
 	}
 
+	cfg.YTDLPBinary = getenv("YTDLP_BINARY", "yt-dlp")
+	cfg.YTDLPTimeout, err = getSeconds("YTDLP_TIMEOUT_SECONDS", 120)
+	if err != nil {
+		return nil, err
+	}
+	uploadMB, err := getInt("TRANSCRIPT_MAX_UPLOAD_MB", 20)
+	if err != nil {
+		return nil, err
+	}
+	if uploadMB <= 0 {
+		return nil, fmt.Errorf("config: TRANSCRIPT_MAX_UPLOAD_MB must be positive")
+	}
+	cfg.MaxUpload = int64(uploadMB) * 1024 * 1024
+	cfg.MaxConcurrent, err = getInt("TRANSCRIPT_MAX_CONCURRENT_INGESTIONS", 2)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.MaxConcurrent <= 0 {
+		return nil, fmt.Errorf("config: TRANSCRIPT_MAX_CONCURRENT_INGESTIONS must be positive")
+	}
+
 	return cfg, nil
 }
 
@@ -93,4 +121,27 @@ func getBool(key string, fallback bool) (bool, error) {
 		return false, fmt.Errorf("config: invalid boolean for %s: %q", key, v)
 	}
 	return b, nil
+}
+
+func getInt(key string, fallback int) (int, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, fmt.Errorf("config: invalid integer for %s: %q", key, v)
+	}
+	return n, nil
+}
+
+func getSeconds(key string, fallback int) (time.Duration, error) {
+	n, err := getInt(key, fallback)
+	if err != nil {
+		return 0, err
+	}
+	if n <= 0 {
+		return 0, fmt.Errorf("config: %s must be positive", key)
+	}
+	return time.Duration(n) * time.Second, nil
 }
