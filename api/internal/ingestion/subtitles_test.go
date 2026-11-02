@@ -21,12 +21,12 @@ func TestSubtitleOptionsExposeSourcesAndFormats(t *testing.T) {
 	}
 }
 
-func TestManualSubtitleOptionsExcludeAutomaticTracks(t *testing.T) {
-	options := manualSubtitleOptions(&Metadata{
+func TestSubtitleOptionsIncludeAutomaticTracks(t *testing.T) {
+	options := subtitleOptions(&Metadata{
 		Subtitles:         trackList{"en": vttTrack()},
 		AutomaticCaptions: trackList{"en": vttTrack(), "en-orig": vttTrack()},
 	})
-	if len(options) != 1 || options[0].Language != "en" || options[0].Source != "manual" {
+	if len(options) != 3 || options[1].Language != "en" || options[1].Source != "automatic" {
 		t.Fatalf("got %+v", options)
 	}
 }
