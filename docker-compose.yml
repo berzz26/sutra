@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: searcher
+      POSTGRES_PASSWORD: searcher
+      POSTGRES_DB: searcher
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U searcher -d searcher"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://searcher:searcher@postgres:5432/searcher
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
+      LOG_LEVEL: info
+      # Artifact store (optional; disable to run without it)
+      ARTIFACT_STORE_ENABLED: "false"
+      MINIO_ENDPOINT: ""
+      MINIO_ACCESS_KEY: ""
+      MINIO_SECRET_KEY: ""
+      MINIO_BUCKET: ""
+      MINIO_REGION: us-east-1
+      MINIO_USE_SSL: "false"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  frontend:
+    build: ./frontend
+    environment:
+      # Preview server proxies /api to the backend over the compose network.
+      VITE_API_PROXY_TARGET: http://backend:8080
+    ports:
+      - "4173:4173"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
