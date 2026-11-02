@@ -24,3 +24,4 @@ backend/vendor/
 .vscode/
 api/third_party
 api/embedding/models/bge-small-en-v1.5/model.onnx.env.example
+api/embedding/models/bge-small-en-v1.5/model.onnx
