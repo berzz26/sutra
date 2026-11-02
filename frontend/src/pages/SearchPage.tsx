@@ -155,7 +155,6 @@ function VideoCard({ video, open, cues, onToggle, onDelete }: { video: VideoReco
 
 function PipelineProgress({ pipeline }: { pipeline: { progress: number; stage: string; state: ProcessingState | null } }) {
   const failed = pipeline.stage === 'failed'
-  const label = pipeline.stage.replaceAll('_', ' ')
   const phases = failed ? [{ at: 0, label: 'indexing failed' }] : [{ at: 0, label: 'starting up' }, { at: 15, label: 'fetching transcript' }, { at: 45, label: 'queued for indexing' }, { at: 60, label: 'building chunks' }, { at: 70, label: 'generating embeddings' }, { at: 95, label: 'saving index' }, { at: 100, label: 'ready to search' }]
   return <div className={`pipeline-progress ${failed ? 'failed' : ''}`} aria-live="polite"><ProgressiveFluxLoader value={pipeline.progress} phases={phases} /><div className="pipeline-counts">{pipeline.state && <small>{pipeline.state.cue_count} cues · {pipeline.state.embedding_count} embeddings generated</small>}<span>{pipeline.progress}%</span></div></div>
 }
