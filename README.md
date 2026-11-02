@@ -130,6 +130,13 @@ specific than generic `en-orig`, and remaining regional matches are selected
 deterministically. An unavailable requested language returns
 `LANGUAGE_UNAVAILABLE`.
 
+`GET /api/v1/videos/subtitles?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DVIDEO_ID`
+lists compatible manual subtitle tracks only, with their exact yt-dlp language
+keys, source, and formats. Automatic captions are not shown by this route.
+Submit the selected `language` and
+`source` back to `POST /api/v1/videos` as `subtitle_key` and
+`subtitle_source` to fetch that exact track.
+
 `POST /api/v1/transcripts` accepts multipart fields `file`, `title`,
 `original_url`, and `language`. The file must be valid VTT or SRT; without a
 title its filename is used. `GET /api/v1/videos`, `GET /api/v1/videos/:id`,

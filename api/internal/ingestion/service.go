@@ -56,6 +56,17 @@ func NewService(pool *pgxpool.Pool, extractor *Extractor, store artifact.Store, 
 // (pending/fetching_transcript/processing) return the existing row instead of
 // racing.
 func (s *Service) IngestYouTube(ctx context.Context, rawURL, language string) (persistence.VideoWithTranscript, error) {
+	return s.ingestYouTube(ctx, rawURL, language, "", "")
+}
+
+// IngestYouTubeTrack ingests the exact subtitle key selected from
+// DiscoverYouTubeSubtitles. source may be manual or automatic; when empty,
+// the existing language-preference selector is used.
+func (s *Service) IngestYouTubeTrack(ctx context.Context, rawURL, language, track, source string) (persistence.VideoWithTranscript, error) {
+	return s.ingestYouTube(ctx, rawURL, language, track, source)
+}
+
+func (s *Service) ingestYouTube(ctx context.Context, rawURL, language, track, source string) (persistence.VideoWithTranscript, error) {
 	ref, err := ParseYouTubeURL(rawURL)
 	if err != nil {
 		return persistence.VideoWithTranscript{}, URLValidationError(err)
@@ -88,12 +99,38 @@ func (s *Service) IngestYouTube(ctx context.Context, rawURL, language string) (p
 		return persistence.VideoWithTranscript{}, err
 	}
 
-	result, err := s.extractAndPersistYouTube(ctx, video, ref, language)
+	result, err := s.extractAndPersistYouTube(ctx, video, ref, language, track, source)
 	if err != nil {
 		s.setStatusBestEffort(ctx, video.ID, failureStatus(err))
 		return persistence.VideoWithTranscript{}, err
 	}
 	return result, nil
+}
+
+// SubtitleOption is an exact track exposed by yt-dlp metadata. Language is
+// intentionally not normalized so clients can submit keys such as en-orig.
+type SubtitleOption struct {
+	Language string   `json:"language"`
+	Name     string   `json:"name,omitempty"`
+	Source   string   `json:"source"`
+	Formats  []string `json:"formats"`
+}
+
+// DiscoverYouTubeSubtitles fetches metadata without downloading a subtitle or
+// media file and returns only compatible VTT/SRT tracks.
+func (s *Service) DiscoverYouTubeSubtitles(ctx context.Context, rawURL string) (string, string, []SubtitleOption, error) {
+	ref, err := ParseYouTubeURL(rawURL)
+	if err != nil {
+		return "", "", nil, URLValidationError(err)
+	}
+	s.limiter <- struct{}{}
+	defer func() { <-s.limiter }()
+	meta, err := s.extractor.FetchMetadata(ctx, ref.CanonicalURL)
+	if err != nil {
+		return "", "", nil, err
+	}
+	options := manualSubtitleOptions(meta)
+	return meta.ID, meta.Title, options, nil
 }
 
 // IngestUpload ingests an uploaded VTT/SRT transcript.
@@ -161,7 +198,7 @@ type UploadParams struct {
 
 // extractAndPersistYouTube runs extraction (bounded by the concurrency
 // limiter) and the persistence transaction.
-func (s *Service) extractAndPersistYouTube(ctx context.Context, video domain.Video, ref *YouTubeRef, language string) (persistence.VideoWithTranscript, error) {
+func (s *Service) extractAndPersistYouTube(ctx context.Context, video domain.Video, ref *YouTubeRef, language, track, source string) (persistence.VideoWithTranscript, error) {
 	s.limiter <- struct{}{}
 	defer func() { <-s.limiter }()
 
@@ -170,7 +207,12 @@ func (s *Service) extractAndPersistYouTube(ctx context.Context, video domain.Vid
 		return persistence.VideoWithTranscript{}, err
 	}
 
-	selection, err := selectSubtitleTrack(meta, language)
+	var selection subSelection
+	if track != "" {
+		selection, err = selectExactSubtitleTrack(meta, track, source)
+	} else {
+		selection, err = selectSubtitleTrack(meta, language)
+	}
 	if err != nil {
 		return persistence.VideoWithTranscript{}, err
 	}

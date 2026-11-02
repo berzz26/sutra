@@ -26,7 +26,8 @@ type Metadata struct {
 type trackList map[string][]subtitleEntry
 
 type subtitleEntry struct {
-	Ext string `json:"ext"`
+	Ext  string `json:"ext"`
+	Name string `json:"name"`
 }
 
 // subSelection records which subtitle track extraction picked.

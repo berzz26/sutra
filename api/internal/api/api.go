@@ -30,6 +30,7 @@ func (h *Handlers) Register(app *fiber.App) {
 	v1.Post("/videos", h.ingestYouTube)
 	v1.Post("/transcripts", h.uploadTranscript)
 	v1.Get("/videos", h.listVideos)
+	v1.Get("/videos/subtitles", h.listSubtitles)
 	v1.Get("/videos/:id", h.getVideo)
 	v1.Get("/videos/:id/transcript", h.getTranscript)
 	v1.Delete("/videos/:id", h.deleteVideo)

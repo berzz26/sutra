@@ -85,6 +85,85 @@ func selectRequested(meta *Metadata, requested string) (subSelection, bool) {
 	return subSelection{}, false
 }
 
+func selectExactSubtitleTrack(meta *Metadata, requested, source string) (subSelection, error) {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return subSelection{}, Errorf(ErrCodeLanguageUnavailable, "subtitle language is required")
+	}
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "", "manual":
+		if selection, ok := manualTrack(meta, requested); ok {
+			return selection, nil
+		}
+		if strings.EqualFold(source, "manual") {
+			return subSelection{}, Errorf(ErrCodeLanguageUnavailable, "manual subtitle %q is not available", requested)
+		}
+		if selection, ok := autoTrack(meta, requested); ok {
+			return selection, nil
+		}
+	case "automatic":
+		if selection, ok := autoTrack(meta, requested); ok {
+			return selection, nil
+		}
+	default:
+		return subSelection{}, Errorf(ErrCodeLanguageUnavailable, "unsupported subtitle source %q", source)
+	}
+	return subSelection{}, Errorf(ErrCodeLanguageUnavailable, "subtitle %q is not available", requested)
+}
+
+func subtitleOptions(meta *Metadata) []SubtitleOption {
+	options := make([]SubtitleOption, 0)
+	for _, key := range sortedKeys(meta.Subtitles) {
+		if option, ok := subtitleOption(key, "manual", meta.Subtitles[key]); ok {
+			options = append(options, option)
+		}
+	}
+	for _, key := range sortedKeys(meta.AutomaticCaptions) {
+		if option, ok := subtitleOption(key, "automatic", meta.AutomaticCaptions[key]); ok {
+			options = append(options, option)
+		}
+	}
+	return options
+}
+
+func manualSubtitleOptions(meta *Metadata) []SubtitleOption {
+	options := make([]SubtitleOption, 0)
+	for _, key := range sortedKeys(meta.Subtitles) {
+		if option, ok := subtitleOption(key, "manual", meta.Subtitles[key]); ok {
+			options = append(options, option)
+		}
+	}
+	return options
+}
+
+func subtitleOption(language, source string, entries []subtitleEntry) (SubtitleOption, bool) {
+	formats := make([]string, 0, len(entries))
+	seen := make(map[string]bool)
+	name := ""
+	compatible := false
+	for _, entry := range entries {
+		ext := strings.ToLower(strings.TrimSpace(entry.Ext))
+		if ext == "" {
+			continue
+		}
+		if !seen[ext] {
+			formats = append(formats, ext)
+			seen[ext] = true
+		}
+		if name == "" {
+			name = entry.Name
+		}
+		if ext == "vtt" || ext == "srt" {
+			compatible = true
+		}
+	}
+	if len(formats) == 0 || !compatible {
+		return SubtitleOption{}, false
+	}
+	sort.Strings(formats)
+	return SubtitleOption{Language: language, Name: name, Source: source, Formats: formats}, true
+}
+
 func languageBase(language string) string {
 	if index := strings.IndexByte(language, '-'); index >= 0 {
 		return language[:index]

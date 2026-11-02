@@ -16,8 +16,10 @@ import (
 )
 
 type youtubeRequest struct {
-	URL      string `json:"url"`
-	Language string `json:"language"`
+	URL            string `json:"url"`
+	Language       string `json:"language"`
+	SubtitleKey    string `json:"subtitle_key"`
+	SubtitleSource string `json:"subtitle_source"`
 }
 
 func (h *Handlers) ingestYouTube(c *fiber.Ctx) error {
@@ -25,11 +27,33 @@ func (h *Handlers) ingestYouTube(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil || strings.TrimSpace(req.URL) == "" {
 		return ingestion.NewError(ingestion.ErrCodeInvalidYouTubeURL, "url is required")
 	}
-	result, err := h.service.IngestYouTube(c.Context(), req.URL, req.Language)
+	var result persistence.VideoWithTranscript
+	var err error
+	if strings.TrimSpace(req.SubtitleKey) != "" {
+		result, err = h.service.IngestYouTubeTrack(c.Context(), req.URL, req.Language, req.SubtitleKey, req.SubtitleSource)
+	} else {
+		result, err = h.service.IngestYouTube(c.Context(), req.URL, req.Language)
+	}
 	if err != nil {
 		return err
 	}
 	return c.Status(http.StatusOK).JSON(videoResponse(result))
+}
+
+func (h *Handlers) listSubtitles(c *fiber.Ctx) error {
+	rawURL := strings.TrimSpace(c.Query("url"))
+	if rawURL == "" {
+		return ingestion.NewError(ingestion.ErrCodeInvalidYouTubeURL, "url is required")
+	}
+	videoID, title, subtitles, err := h.service.DiscoverYouTubeSubtitles(c.Context(), rawURL)
+	if err != nil {
+		return err
+	}
+	return c.JSON(fiber.Map{
+		"video_id":  videoID,
+		"title":     title,
+		"subtitles": subtitles,
+	})
 }
 
 func (h *Handlers) uploadTranscript(c *fiber.Ctx) error {
