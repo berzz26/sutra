@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -20,6 +21,7 @@ type searchRequest struct {
 }
 
 func (h *Handlers) search(c *fiber.Ctx) error {
+	started := time.Now()
 	var req searchRequest
 	if err := c.BodyParser(&req); err != nil {
 		return ingestion.NewError(ingestion.ErrCodeInvalidSearch, "request body must be valid JSON")
@@ -44,7 +46,8 @@ func (h *Handlers) search(c *fiber.Ctx) error {
 		}
 		return ingestion.WrapError(ingestion.ErrCodeSearchFailed, err, "search failed")
 	}
-	return c.Status(http.StatusOK).JSON(fiber.Map{"query": query, "limit": req.Limit, "offset": req.Offset, "results": results})
+	durationMs := time.Since(started).Microseconds() / 1000
+	return c.Status(http.StatusOK).JSON(fiber.Map{"query": query, "limit": req.Limit, "offset": req.Offset, "duration_ms": durationMs, "results": results})
 }
 
 func invalidSearchError(err error) *ingestion.Error {

@@ -20,6 +20,7 @@ export interface SearchResult {
   end_ms: number
   score: number
 }
+export interface SearchResponse { query: string; limit: number; offset: number; duration_ms: number; results: SearchResult[] }
 
 export function listVideos(): Promise<{ videos: Video[] }> { return apiClient.get('/api/v1/videos') }
 export function listSubtitles(url: string): Promise<{ video_id: string; title: string; subtitles: SubtitleOption[] }> { return apiClient.get(`/api/v1/videos/subtitles?url=${encodeURIComponent(url)}`) }
@@ -34,6 +35,6 @@ export function ingestYouTube(url: string, language: string, subtitle?: Subtitle
 export function uploadTranscript(data: FormData): Promise<Video> { return apiClient.postForm('/api/v1/transcripts', data) }
 export function getTranscript(id: string): Promise<{ cues: Cue[] }> { return apiClient.get(`/api/v1/videos/${id}/transcript`) }
 export function deleteVideo(id: string): Promise<void> { return apiClient.delete(`/api/v1/videos/${id}`) }
-export function search(query: string, limit = 10, videoId?: string): Promise<{ query: string; results: SearchResult[] }> {
+export function search(query: string, limit = 10, videoId?: string): Promise<SearchResponse> {
   return apiClient.post('/api/v1/search', { query, limit, video_id: videoId || undefined })
 }

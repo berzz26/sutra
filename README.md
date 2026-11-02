@@ -200,7 +200,9 @@ their ranks with RRF. The returned `score` is the RRF score, not a probability;
 `semantic_score` is cosine similarity (`1 - distance`) and `lexical_score` is
 PostgreSQL `ts_rank_cd` when that method returned the chunk. For YouTube
 results, `timestamp_url` is also returned; it preserves the original URL's
-query parameters and adds `t=<start time in seconds>`.
+query parameters and adds `t=<start time in seconds>`. The response also
+includes `duration_ms`, measured by the backend across query embedding and
+retrieval; the frontend displays that alongside the end-to-end client time.
 
 ## Documentation
 

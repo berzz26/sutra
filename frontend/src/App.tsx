@@ -3,6 +3,7 @@ import { Layout } from './components/Layout'
 import { SearchPage } from './pages/SearchPage'
 import { StatusPage } from './pages/StatusPage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { Toaster } from 'sonner'
 
 const router = createBrowserRouter([
   {
@@ -17,5 +18,5 @@ const router = createBrowserRouter([
 ])
 
 export function App() {
-  return <RouterProvider router={router} />
+  return <><RouterProvider router={router} /><Toaster position="bottom-right" richColors closeButton /></>
 }
