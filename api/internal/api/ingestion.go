@@ -194,15 +194,40 @@ func (h *Handlers) processVideo(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(state)
+	return c.JSON(processingResponse(state))
 }
 func (h *Handlers) processingState(c *fiber.Ctx) error {
 	state, err := h.processor.State(c.Context(), c.Params("id"))
 	if err != nil {
 		return mapAPIError(err)
 	}
-	return c.JSON(state)
+	return c.JSON(processingResponse(state))
 }
+
+type processingResponseBody struct {
+	VideoID         string  `json:"video_id"`
+	Status          string  `json:"status"`
+	Stage           string  `json:"stage"`
+	ProgressPercent int     `json:"progress_percent"`
+	CueCount        int     `json:"cue_count"`
+	EmbeddingCount  int     `json:"embedding_count"`
+	ChunkCount      int     `json:"chunk_count"`
+	LastError       *string `json:"last_error,omitempty"`
+}
+
+func processingResponse(state persistence.ProcessingState) processingResponseBody {
+	return processingResponseBody{
+		VideoID:         state.VideoID,
+		Status:          state.Status,
+		Stage:           state.Stage,
+		ProgressPercent: state.ProgressPercent,
+		CueCount:        state.CueCount,
+		EmbeddingCount:  state.EmbeddingCount,
+		ChunkCount:      state.ChunkCount,
+		LastError:       state.LastError,
+	}
+}
+
 func (h *Handlers) listChunks(c *fiber.Ctx) error {
 	limit, offset, err := page(c)
 	if err != nil {
