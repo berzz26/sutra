@@ -154,6 +154,38 @@ func (h *Handlers) deleteVideo(c *fiber.Ctx) error {
 	return c.SendStatus(http.StatusNoContent)
 }
 
+func (h *Handlers) processVideo(c *fiber.Ctx) error {
+	if _, err := persistence.GetVideo(c.Context(), h.pool, c.Params("id")); err != nil {
+		return mapAPIError(err)
+	}
+	if err := h.processor.Process(c.Context(), c.Params("id")); err != nil {
+		return ingestion.WrapError(ingestion.ErrCodePersistenceFailed, err, "processing failed")
+	}
+	state, err := h.processor.State(c.Context(), c.Params("id"))
+	if err != nil {
+		return err
+	}
+	return c.JSON(state)
+}
+func (h *Handlers) processingState(c *fiber.Ctx) error {
+	state, err := h.processor.State(c.Context(), c.Params("id"))
+	if err != nil {
+		return mapAPIError(err)
+	}
+	return c.JSON(state)
+}
+func (h *Handlers) listChunks(c *fiber.Ctx) error {
+	limit, offset, err := page(c)
+	if err != nil {
+		return err
+	}
+	chunks, err := h.processor.List(c.Context(), c.Params("id"), limit, offset)
+	if err != nil {
+		return ingestion.WrapError(ingestion.ErrCodePersistenceFailed, err, "failed to list chunks")
+	}
+	return c.JSON(fiber.Map{"chunks": chunks, "limit": limit, "offset": offset})
+}
+
 func page(c *fiber.Ctx) (int, int, error) {
 	limit, err := queryInt(c, "limit", 50)
 	if err != nil || limit < 1 || limit > 200 {

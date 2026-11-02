@@ -22,3 +22,5 @@ backend/vendor/
 *.swp
 .idea/
 .vscode/
+api/third_party
+api/embedding/models/bge-small-en-v1.5/model.onnx

@@ -6,15 +6,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/berzz/searcher/backend/internal/ingestion"
+	"github.com/berzz/searcher/backend/internal/processing"
 )
 
 type Handlers struct {
-	pool    *pgxpool.Pool
-	service *ingestion.Service
+	pool      *pgxpool.Pool
+	service   *ingestion.Service
+	processor *processing.Service
 }
 
-func New(pool *pgxpool.Pool, service *ingestion.Service) *Handlers {
-	return &Handlers{pool: pool, service: service}
+func New(pool *pgxpool.Pool, service *ingestion.Service, processor *processing.Service) *Handlers {
+	return &Handlers{pool: pool, service: service, processor: processor}
 }
 
 func (h *Handlers) Register(app *fiber.App) {
@@ -34,4 +36,7 @@ func (h *Handlers) Register(app *fiber.App) {
 	v1.Get("/videos/:id", h.getVideo)
 	v1.Get("/videos/:id/transcript", h.getTranscript)
 	v1.Delete("/videos/:id", h.deleteVideo)
+	v1.Post("/videos/:id/process", h.processVideo)
+	v1.Get("/videos/:id/processing", h.processingState)
+	v1.Get("/videos/:id/chunks", h.listChunks)
 }

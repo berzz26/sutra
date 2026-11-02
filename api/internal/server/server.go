@@ -18,6 +18,7 @@ import (
 
 	"github.com/berzz/searcher/backend/internal/api"
 	"github.com/berzz/searcher/backend/internal/ingestion"
+	"github.com/berzz/searcher/backend/internal/processing"
 )
 
 type Server struct {
@@ -25,7 +26,7 @@ type Server struct {
 	addr string
 }
 
-func New(addr string, pool *pgxpool.Pool, service *ingestion.Service, maxUploadBytes int64) *Server {
+func New(addr string, pool *pgxpool.Pool, service *ingestion.Service, processor *processing.Service, maxUploadBytes int64) *Server {
 	app := fiber.New(fiber.Config{
 		AppName:      "searcher",
 		BodyLimit:    int(maxUploadBytes) + 1024*1024,
@@ -35,7 +36,7 @@ func New(addr string, pool *pgxpool.Pool, service *ingestion.Service, maxUploadB
 	app.Use(recover.New())
 	app.Use(requestid.New())
 
-	api.New(pool, service).Register(app)
+	api.New(pool, service, processor).Register(app)
 
 	return &Server{app: app, addr: addr}
 }

@@ -30,6 +30,23 @@ type Config struct {
 	YTDLPTimeout  time.Duration // YTDLP_TIMEOUT_SECONDS (seconds)
 	MaxUpload     int64         // TRANSCRIPT_MAX_UPLOAD_MB (bytes beyond config)
 	MaxConcurrent int           // TRANSCRIPT_MAX_CONCURRENT_INGESTIONS
+	Embedding     EmbeddingConfig
+}
+
+type EmbeddingConfig struct {
+	Model         string
+	Version       string
+	ONNXPath      string
+	TokenizerPath string
+	RuntimePath   string
+	Dimensions    int
+	BatchSize     int
+	Threads       int
+	Timeout       time.Duration
+	TargetWords   int
+	MinWords      int
+	MaxWords      int
+	OverlapWords  int
 }
 
 // ArtifactConfig describes the optional S3-compatible object store.
@@ -98,6 +115,30 @@ func Load() (*Config, error) {
 	}
 	if cfg.MaxConcurrent <= 0 {
 		return nil, fmt.Errorf("config: TRANSCRIPT_MAX_CONCURRENT_INGESTIONS must be positive")
+	}
+	cfg.Embedding = EmbeddingConfig{
+		Model: getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5"), Version: getenv("EMBEDDING_MODEL_VERSION", "v1.5"),
+		ONNXPath:      getenv("EMBEDDING_ONNX_PATH", "embedding/models/bge-small-en-v1.5/model.onnx"),
+		TokenizerPath: getenv("EMBEDDING_TOKENIZER_PATH", "embedding/models/bge-small-en-v1.5/tokenizer.json"), RuntimePath: getenv("ONNXRUNTIME_SHARED_LIBRARY_PATH", ""), Dimensions: 384,
+		BatchSize: 32, Threads: 4, Timeout: 5 * time.Minute,
+		TargetWords: 180, MinWords: 80, MaxWords: 250, OverlapWords: 30,
+	}
+	if cfg.Embedding.Dimensions, err = getInt("EMBEDDING_DIMENSIONS", 384); err != nil {
+		return nil, err
+	}
+	if cfg.Embedding.BatchSize, err = getInt("EMBEDDING_BATCH_SIZE", 32); err != nil {
+		return nil, err
+	}
+	if cfg.Embedding.Threads, err = getInt("EMBEDDING_ONNX_THREADS", 4); err != nil {
+		return nil, err
+	}
+	if cfg.Embedding.Timeout, err = time.ParseDuration(getenv("EMBEDDING_TIMEOUT", "5m")); err != nil {
+		return nil, fmt.Errorf("config: EMBEDDING_TIMEOUT: %w", err)
+	}
+	for name, value := range map[string]int{"EMBEDDING_DIMENSIONS": cfg.Embedding.Dimensions, "EMBEDDING_BATCH_SIZE": cfg.Embedding.BatchSize, "EMBEDDING_ONNX_THREADS": cfg.Embedding.Threads} {
+		if value <= 0 {
+			return nil, fmt.Errorf("config: %s must be positive", name)
+		}
 	}
 
 	return cfg, nil
