@@ -1,5 +1,5 @@
 import { FormEvent, type CSSProperties, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, Check, Clock3, FileText, FolderOpen, Loader2, Search as SearchIcon, Trash2, Upload, Video, X } from 'lucide-react'
+import { ArrowUpRight, Check, Clock3, Copy, Download, FileText, FolderOpen, Loader2, Search as SearchIcon, Trash2, Upload, Video, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApiError } from '../api/client'
 import { Cue, deleteVideo, getProcessing, getTranscript, ingestYouTube, listSubtitles, listVideos, ProcessingState, SearchResult, search, SubtitleOption, uploadTranscript, Video as VideoRecord, YouTubeMetadata } from '../api/endpoints'
@@ -150,7 +150,28 @@ function Thumbnail({ src }: { src?: string }) {
 }
 
 function VideoCard({ video, open, cues, onToggle, onDelete }: { video: VideoRecord; open: boolean; cues: Cue[]; onToggle: () => void; onDelete: () => void }) {
-  return <Card className="video-card"><div className="video-card-main"><div className="video-thumb"><Video size={20} /><span>{video.source_type === 'youtube' ? 'YT' : 'FILE'}</span></div><div className="video-info"><div className="video-heading"><h3 title={video.title}>{video.title || 'Untitled video'}</h3><Badge tone={video.status === 'ready' || video.status === 'succeeded' ? 'success' : 'muted'}>{video.status}</Badge></div><div className="video-meta"><span>{video.source_type === 'youtube' ? 'YouTube' : 'Uploaded transcript'}</span><span>{video.language || 'Language unknown'}</span><span>{video.transcript?.cue_count ?? 0} cues</span></div></div><div className="video-actions"><Button variant="secondary" size="sm" onClick={onToggle}>{open ? 'Hide transcript' : 'View transcript'}</Button><Button variant="ghost" size="icon" aria-label={`Delete ${video.title || 'video'}`} onClick={onDelete}><Trash2 size={16} /></Button></div></div>{open && <div className="transcript-viewer"><div className="transcript-header"><span>Transcript cues</span><Badge tone="muted">{cues.length} cues</Badge></div>{cues.map((cue) => <div className="cue-row" key={cue.id}><time>{formatMs(cue.start_ms)}</time><p>{cue.text}</p></div>)}</div>}</Card>
+  const format = video.transcript?.original_format === 'srt' ? 'srt' : 'vtt'
+  const transcript = formatTranscript(cues, format)
+  const copyTranscript = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        try { await navigator.clipboard.writeText(transcript) } catch { if (!copyTextFallback(transcript)) throw new Error('copy failed') }
+      } else if (!copyTextFallback(transcript)) {
+        throw new Error('copy failed')
+      }
+      toast.success('Transcript copied to clipboard')
+    } catch { toast.error('Clipboard access is unavailable. Try downloading the transcript instead.') }
+  }
+  const downloadTranscript = () => {
+    const blob = new Blob([transcript], { type: format === 'srt' ? 'application/x-subrip' : 'text/vtt' })
+    const href = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = href
+    anchor.download = `${safeFilename(video.title || 'transcript')}.${format}`
+    anchor.click()
+    URL.revokeObjectURL(href)
+  }
+  return <Card className="video-card"><div className="video-card-main"><div className="video-thumb"><Video size={20} /><span>{video.source_type === 'youtube' ? 'YT' : 'FILE'}</span></div><div className="video-info"><div className="video-heading"><h3 title={video.title}>{video.title || 'Untitled video'}</h3><Badge tone={video.status === 'ready' || video.status === 'succeeded' ? 'success' : 'muted'}>{video.status}</Badge></div><div className="video-meta"><span>{video.source_type === 'youtube' ? 'YouTube' : 'Uploaded transcript'}</span><span>{video.language || 'Language unknown'}</span><span>{video.transcript?.cue_count ?? 0} cues</span></div></div><div className="video-actions"><Button variant="secondary" size="sm" onClick={onToggle}>{open ? 'Hide transcript' : 'View transcript'}</Button><Button variant="ghost" size="icon" aria-label={`Delete ${video.title || 'video'}`} onClick={onDelete}><Trash2 size={16} /></Button></div></div>{open && <div className="transcript-viewer"><div className="transcript-header"><div><span>Transcript cues</span><Badge tone="muted">{cues.length} cues</Badge></div><div className="transcript-actions"><Button variant="ghost" size="sm" disabled={cues.length === 0} onClick={() => void copyTranscript()}><Copy size={14} /> Copy</Button><Button variant="ghost" size="sm" disabled={cues.length === 0} onClick={downloadTranscript}><Download size={14} /> Download .{format}</Button></div></div>{cues.map((cue) => <div className="cue-row" key={cue.id}><time>{formatMs(cue.start_ms)}</time><p>{cue.text}</p></div>)}</div>}</Card>
 }
 
 function PipelineProgress({ pipeline }: { pipeline: { progress: number; stage: string; state: ProcessingState | null } }) {
@@ -168,4 +189,35 @@ function Highlight({ text, query }: { text: string; query: string }) {
 
 function escapeRegExp(value: string) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
 function formatMs(ms: number) { return `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}` }
+function formatTranscript(cues: Cue[], format: 'srt' | 'vtt') {
+  const body = cues.map((cue, index) => {
+    const start = formatSubtitleTimestamp(cue.start_ms, format)
+    const end = formatSubtitleTimestamp(cue.end_ms, format)
+    return format === 'srt' ? `${index + 1}\n${start} --> ${end}\n${cue.text}` : `${start} --> ${end}\n${cue.text}`
+  }).join('\n\n')
+  return format === 'vtt' ? `WEBVTT\n\n${body}\n` : `${body}\n`
+}
+function formatSubtitleTimestamp(ms: number, format: 'srt' | 'vtt') {
+  const safeMs = Math.max(0, Math.round(ms))
+  const hours = Math.floor(safeMs / 3_600_000)
+  const minutes = Math.floor((safeMs % 3_600_000) / 60_000)
+  const seconds = Math.floor((safeMs % 60_000) / 1_000)
+  const millis = safeMs % 1_000
+  const separator = format === 'srt' ? ',' : '.'
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}${separator}${String(millis).padStart(3, '0')}`
+}
+function safeFilename(value: string) { return value.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'transcript' }
+function copyTextFallback(text: string) {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
+  let copied = false
+  try { copied = document.execCommand('copy') } finally { textarea.remove() }
+  return copied
+}
 function errorText(cause: unknown) { return cause instanceof ApiError ? cause.message : 'Something went wrong. Please try again.' }
