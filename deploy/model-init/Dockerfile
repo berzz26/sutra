@@ -1,6 +1,6 @@
 # One-shot model initializer. Kept separate from the API image so the runtime
 # image never needs network access to Hugging Face at startup.
-FROM alpine:3.20.3
+FROM alpine:3.24.3
 
 RUN apk add --no-cache ca-certificates curl jq
 
