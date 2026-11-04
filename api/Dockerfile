@@ -5,7 +5,7 @@
 # (glibc) because the official upstream ONNX Runtime Linux builds are glibc
 # binaries; Alpine/musl is not a supported runtime for this stack.
 
-FROM golang:1.26-bookworm AS build
+FROM golang:1.27-bookworm AS build
 WORKDIR /src
 
 RUN apt-get update \
