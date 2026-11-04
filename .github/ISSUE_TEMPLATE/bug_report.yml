@@ -1,0 +1,114 @@
+name: Bug report
+description: Report a reproducible problem with Sutra
+title: "bug: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please search existing issues first and
+        redact credentials, tokens, hostnames, and personal data.
+
+        Do **not** report security vulnerabilities here. Use the private
+        security advisory link instead.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I reproduced this on the latest `master` or a current release.
+          required: true
+        - label: I removed secrets and personal data from logs and screenshots.
+          required: true
+        - label: This is not a security vulnerability (see SECURITY.md for those).
+          required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Installation / Docker Compose
+        - Configuration
+        - YouTube ingestion
+        - Transcript upload
+        - Indexing / processing
+        - Search
+        - Frontend / UI
+        - Database / migrations
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the actual behavior and its impact.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest reliable reproduction.
+      placeholder: |
+        1. Run `docker compose up --build -d`
+        2. Open ...
+        3. Upload ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Output of `docker compose ps -a` and relevant logs, with secrets redacted.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Sutra version or commit
+      placeholder: e.g. master @ 328658a, or v0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: Ubuntu 24.04, x86_64, Docker 27.x, Compose 2.x
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration changes
+      description: Redact credentials. Mention non-default ports, CORS/proxy setup, external database, MinIO, etc.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Screenshots, related issues, or workarounds.
+    validations:
+      required: false
