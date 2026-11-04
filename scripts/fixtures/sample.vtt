@@ -1,0 +1,16 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:05.000
+Welcome to the Sutra smoke test.
+
+00:00:05.000 --> 00:00:12.000
+This transcript is uploaded through the real HTTP API.
+
+00:00:12.000 --> 00:00:19.000
+It is chunked, embedded locally, and indexed for hybrid search.
+
+00:00:19.000 --> 00:00:27.000
+Search for the phrase local embedding to find this moment again.
+
+00:00:27.000 --> 00:00:34.000
+The data stays in PostgreSQL and the model runs on this machine.

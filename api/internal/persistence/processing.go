@@ -51,7 +51,7 @@ func LoadCues(ctx context.Context, p *pgxpool.Pool, id string) ([]domain.Transcr
 	return cues, rows.Err()
 }
 
-func SaveChunks(ctx context.Context, p *pgxpool.Pool, videoID, version, model string, chunks []ChunkRecord, vectors [][]float32) error {
+func SaveChunks(ctx context.Context, p *pgxpool.Pool, videoID, version, model string, chunks []ChunkRecord, vectors [][]float32, cueCount int) error {
 	if len(chunks) != len(vectors) {
 		return fmt.Errorf("chunk/vector length mismatch")
 	}
@@ -89,7 +89,7 @@ func SaveChunks(ctx context.Context, p *pgxpool.Pool, videoID, version, model st
 			return fmt.Errorf("persistence: remove stale chunks: %w", err)
 		}
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO video_processing(video_id,status,stage,progress_percent,processing_version,model_version,last_error,chunk_count,cue_count,embedding_count,started_at,completed_at,updated_at) VALUES($1,'completed','complete',100,$2,$3,NULL,$4,$5,$4,now(),now(),now()) ON CONFLICT(video_id) DO UPDATE SET status='completed',stage='complete',progress_percent=100,processing_version=EXCLUDED.processing_version,model_version=EXCLUDED.model_version,last_error=NULL,chunk_count=EXCLUDED.chunk_count,cue_count=EXCLUDED.cue_count,embedding_count=EXCLUDED.embedding_count,completed_at=now(),updated_at=now()`, videoID, version, model, len(chunks), len(chunks)); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO video_processing(video_id,status,stage,progress_percent,processing_version,model_version,last_error,chunk_count,cue_count,embedding_count,started_at,completed_at,updated_at) VALUES($1,'completed','complete',100,$2,$3,NULL,$4,$5,$6,now(),now(),now()) ON CONFLICT(video_id) DO UPDATE SET status='completed',stage='complete',progress_percent=100,processing_version=EXCLUDED.processing_version,model_version=EXCLUDED.model_version,last_error=NULL,chunk_count=EXCLUDED.chunk_count,cue_count=EXCLUDED.cue_count,embedding_count=EXCLUDED.embedding_count,completed_at=now(),updated_at=now()`, videoID, version, model, len(chunks), cueCount, len(vectors)); err != nil {
 		return fmt.Errorf("persistence: mark processing complete: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -128,7 +128,10 @@ func GetProcessing(ctx context.Context, p *pgxpool.Pool, id string) (ProcessingS
 	if errors.Is(err, pgx.ErrNoRows) {
 		var videoStatus string
 		if videoErr := p.QueryRow(ctx, `SELECT status FROM videos WHERE id=$1`, id).Scan(&videoStatus); videoErr != nil {
-			return s, err
+			if errors.Is(videoErr, pgx.ErrNoRows) {
+				return s, ErrVideoNotFound
+			}
+			return s, fmt.Errorf("persistence: get video status: %w", videoErr)
 		}
 		return ProcessingState{VideoID: id, Status: "pending", Stage: "queued", ProgressPercent: 40}, nil
 	}

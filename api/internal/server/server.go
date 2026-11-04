@@ -29,7 +29,7 @@ type Server struct {
 
 func New(addr string, pool *pgxpool.Pool, service *ingestion.Service, processor *processing.Service, retriever *retrieval.Service, maxUploadBytes int64) *Server {
 	app := fiber.New(fiber.Config{
-        AppName:      "sutra",
+		AppName:      "sutra",
 		BodyLimit:    int(maxUploadBytes) + 1024*1024,
 		ErrorHandler: errorHandler,
 	})

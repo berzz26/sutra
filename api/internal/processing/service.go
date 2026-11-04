@@ -61,7 +61,7 @@ func (s *Service) Process(ctx context.Context, id string) error {
 	if err := persistence.UpdateProcessingProgress(ctx, s.pool, id, "saving", 95, len(cues), len(vectors)); err != nil {
 		return s.fail(ctx, id, err)
 	}
-	if err = persistence.SaveChunks(ctx, s.pool, id, s.cfg.Version, s.model, records, vectors); err != nil {
+	if err = persistence.SaveChunks(ctx, s.pool, id, s.cfg.Version, s.model, records, vectors, len(cues)); err != nil {
 		return s.fail(ctx, id, err)
 	}
 	slog.Info("transcript processing completed", "video_id", id, "cues", len(cues), "chunks", len(chunks), "embeddings", len(vectors), "duration", time.Since(started))

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 
 	"github.com/berzz/searcher/backend/internal/domain"
 	"github.com/berzz/searcher/backend/internal/ingestion"
@@ -153,8 +154,22 @@ func (h *Handlers) listVideos(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"videos": result, "limit": limit, "offset": offset})
 }
 
+// videoIDParam validates the :id route parameter before it reaches PostgreSQL,
+// which would otherwise reject a malformed UUID as a generic query error.
+func videoIDParam(c *fiber.Ctx) (string, error) {
+	id := c.Params("id")
+	if _, err := uuid.Parse(id); err != nil {
+		return "", ingestion.NewError(ingestion.ErrCodeInvalidVideoID, "video id must be a UUID")
+	}
+	return id, nil
+}
+
 func (h *Handlers) getVideo(c *fiber.Ctx) error {
-	item, err := persistence.GetVideo(c.Context(), h.pool, c.Params("id"))
+	id, err := videoIDParam(c)
+	if err != nil {
+		return err
+	}
+	item, err := persistence.GetVideo(c.Context(), h.pool, id)
 	if err != nil {
 		return mapAPIError(err)
 	}
@@ -166,38 +181,55 @@ func (h *Handlers) getTranscript(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if _, err := persistence.GetVideo(c.Context(), h.pool, c.Params("id")); err != nil {
+	id, err := videoIDParam(c)
+	if err != nil {
+		return err
+	}
+	if _, err := persistence.GetVideo(c.Context(), h.pool, id); err != nil {
 		return mapAPIError(err)
 	}
-	cues, err := persistence.ListCues(c.Context(), h.pool, c.Params("id"), limit, offset)
+	cues, err := persistence.ListCues(c.Context(), h.pool, id, limit, offset)
 	if err != nil {
 		return ingestion.WrapError(ingestion.ErrCodePersistenceFailed, err, "failed to retrieve transcript")
 	}
-	return c.JSON(fiber.Map{"video_id": c.Params("id"), "cues": cues, "limit": limit, "offset": offset})
+	return c.JSON(fiber.Map{"video_id": id, "cues": cues, "limit": limit, "offset": offset})
 }
 
 func (h *Handlers) deleteVideo(c *fiber.Ctx) error {
-	if err := h.service.DeleteVideo(c.Context(), c.Params("id")); err != nil {
+	id, err := videoIDParam(c)
+	if err != nil {
+		return err
+	}
+	if err := h.service.DeleteVideo(c.Context(), id); err != nil {
 		return err
 	}
 	return c.SendStatus(http.StatusNoContent)
 }
 
 func (h *Handlers) processVideo(c *fiber.Ctx) error {
-	if _, err := persistence.GetVideo(c.Context(), h.pool, c.Params("id")); err != nil {
+	id, err := videoIDParam(c)
+	if err != nil {
+		return err
+	}
+	if _, err := persistence.GetVideo(c.Context(), h.pool, id); err != nil {
 		return mapAPIError(err)
 	}
-	if err := h.processor.Process(c.Context(), c.Params("id")); err != nil {
+	if err := h.processor.Process(c.Context(), id); err != nil {
 		return ingestion.WrapError(ingestion.ErrCodePersistenceFailed, err, "processing failed")
 	}
-	state, err := h.processor.State(c.Context(), c.Params("id"))
+	state, err := h.processor.State(c.Context(), id)
 	if err != nil {
 		return err
 	}
 	return c.JSON(processingResponse(state))
 }
+
 func (h *Handlers) processingState(c *fiber.Ctx) error {
-	state, err := h.processor.State(c.Context(), c.Params("id"))
+	id, err := videoIDParam(c)
+	if err != nil {
+		return err
+	}
+	state, err := h.processor.State(c.Context(), id)
 	if err != nil {
 		return mapAPIError(err)
 	}
@@ -233,7 +265,11 @@ func (h *Handlers) listChunks(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	chunks, err := h.processor.List(c.Context(), c.Params("id"), limit, offset)
+	id, err := videoIDParam(c)
+	if err != nil {
+		return err
+	}
+	chunks, err := h.processor.List(c.Context(), id, limit, offset)
 	if err != nil {
 		return ingestion.WrapError(ingestion.ErrCodePersistenceFailed, err, "failed to list chunks")
 	}

@@ -58,7 +58,20 @@ func Load(cfg Config) (*Embedder, error) {
 		_ = ort.DestroyEnvironment()
 		return nil, fmt.Errorf("embedding: load tokenizer %s: %w", cfg.TokenizerPath, err)
 	}
-	session, err := ort.NewDynamicAdvancedSession(cfg.ModelPath, inputNames, []string{outputs[0].Name}, nil)
+	options, err := ort.NewSessionOptions()
+	if err != nil {
+		_ = ort.DestroyEnvironment()
+		return nil, fmt.Errorf("embedding: create session options: %w", err)
+	}
+	if cfg.Threads > 0 {
+		if err := options.SetIntraOpNumThreads(cfg.Threads); err != nil {
+			_ = options.Destroy()
+			_ = ort.DestroyEnvironment()
+			return nil, fmt.Errorf("embedding: set ONNX threads: %w", err)
+		}
+	}
+	session, err := ort.NewDynamicAdvancedSession(cfg.ModelPath, inputNames, []string{outputs[0].Name}, options)
+	_ = options.Destroy()
 	if err != nil {
 		_ = ort.DestroyEnvironment()
 		return nil, fmt.Errorf("embedding: create model session: %w", err)
@@ -89,6 +102,7 @@ type Config struct {
 	ModelPath, TokenizerPath, RuntimePath string
 	Dimensions, BatchSize                 int
 	MaxTokens                             int
+	Threads                               int
 }
 
 func (e *Embedder) Embed(ctx context.Context, texts []string) ([][]float32, error) {

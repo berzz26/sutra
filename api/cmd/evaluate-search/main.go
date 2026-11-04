@@ -55,7 +55,7 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
-	emb, err := embedding.Load(embedding.Config{ModelPath: cfg.Embedding.ONNXPath, TokenizerPath: cfg.Embedding.TokenizerPath, RuntimePath: cfg.Embedding.RuntimePath, Dimensions: cfg.Embedding.Dimensions, BatchSize: cfg.Embedding.BatchSize, MaxTokens: cfg.Embedding.MaxTokens})
+	emb, err := embedding.Load(embedding.Config{ModelPath: cfg.Embedding.ONNXPath, TokenizerPath: cfg.Embedding.TokenizerPath, RuntimePath: cfg.Embedding.RuntimePath, Dimensions: cfg.Embedding.Dimensions, BatchSize: cfg.Embedding.BatchSize, MaxTokens: cfg.Embedding.MaxTokens, Threads: cfg.Embedding.Threads})
 	if err != nil {
 		return err
 	}

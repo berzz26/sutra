@@ -29,6 +29,7 @@ const (
 	ErrCodeMinioUploadFailed   = "MINIO_UPLOAD_FAILED"
 	ErrCodePersistenceFailed   = "DATABASE_PERSISTENCE_FAILED"
 	ErrCodeVideoNotFound       = "VIDEO_NOT_FOUND"
+	ErrCodeInvalidVideoID      = "INVALID_VIDEO_ID"
 	ErrCodeInvalidSearch       = "INVALID_SEARCH"
 	ErrCodeSearchFailed        = "SEARCH_FAILED"
 )
