@@ -1,0 +1,13 @@
+.git/
+.github/
+.env
+.env.*
+**/.env
+**/.env.*
+api/embedding/models/
+api/third_party/
+frontend/node_modules/
+frontend/dist/
+**/*.tsbuildinfo
+docs/
+CHANGELOG.md

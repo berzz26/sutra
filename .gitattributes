@@ -1,0 +1,37 @@
+* text=auto eol=lf
+
+*.go text
+*.sql text
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text
+*.json text
+*.ts text
+*.tsx text
+*.css text
+*.html text
+Makefile text eol=lf
+
+# Generated dependency trees are textual but not reviewed line-by-line.
+go.sum linguist-generated=true
+frontend/package-lock.json linguist-generated=true
+
+# Binary model/tokenizer/runtime artifacts are never committed, but mark them
+# correctly if a contributor has local copies.
+*.onnx binary
+*.onnx_data binary
+*.so binary
+*.so.* binary
+*.dll binary
+*.dylib binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.zip binary
+*.tgz binary
+*.gz binary

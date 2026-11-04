@@ -1,27 +1,91 @@
-# Build
-backend/searcher
-backend/server
-*.test
-*.out
-/docs
-# Dependencies
-node_modules/
-
-# Build output
-frontend/dist/
-
-# Environment
+# ---------------------------------------------------------------------------
+# Secrets and local configuration
+# ---------------------------------------------------------------------------
 .env
-frontend/.env.local
+.env.*
+*.env.local
+**/.env
+**/.env.*
+!/.env.example
+!**/.env.example
 
+# ---------------------------------------------------------------------------
+# Local models and native runtime distributions
+# ---------------------------------------------------------------------------
+# Model weights are never committed. The tokenizer is small and retained for
+# local development; production downloads both files through model-init.
+api/embedding/models/**/*.onnx
+api/embedding/models/**/*.onnx_data
+api/embedding/models/**/*.bin
+api/embedding/models/**/*.safetensors
+api/embedding/models/**/*.gguf
+api/embedding/models/**/*.partial
+api/third_party/
+models/
+.cache/models/
+model-cache/
+minio-data/
+data/
+
+# ---------------------------------------------------------------------------
 # Go
-backend/vendor/
+# ---------------------------------------------------------------------------
+api/sutra
+api/backfill
+api/*.test
+api/*.out
+api/coverage.*
+api/vendor/
+**/*.test
+**/*.out
 
-# Editor / OS
-.DS_Store
-*.swp
+# ---------------------------------------------------------------------------
+# Node / frontend
+# ---------------------------------------------------------------------------
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.tsbuildinfo
+frontend/tsconfig.*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ---------------------------------------------------------------------------
+# Build artifacts, logs and temporary ingestion files
+# ---------------------------------------------------------------------------
+dist/
+build/
+bin/
+tmp/
+*.log
+sutra-ingest-*
+*.vtt.part
+*.srt.part
+*.download.*
+coverage/
+test-results/
+playwright-report/
+
+# ---------------------------------------------------------------------------
+# Local database / object-store state (named volumes are used by Docker)
+# ---------------------------------------------------------------------------
+postgres-data/
+pgdata/
+minio/
+minio-data/
+backups/
+
+# ---------------------------------------------------------------------------
+# Editors and operating systems
+# ---------------------------------------------------------------------------
 .idea/
 .vscode/
-api/third_party
-api/embedding/models/bge-small-en-v1.5/model.onnx.env.example
-api/embedding/models/bge-small-en-v1.5/model.onnx
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,14 @@
+# Optional developer overrides. All host bindings are loopback-only.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Use this when you want to run the Go and frontend toolchains directly on the
+# host against the containerized database, or inspect MinIO from the host.
+services:
+  db:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+  minio:
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"

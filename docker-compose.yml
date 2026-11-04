@@ -1,56 +1,138 @@
+name: sutra
+
 services:
-  postgres:
-    image: postgres:16-alpine
+  db:
+    image: pgvector/pgvector:0.8.7-pg16-bookworm
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: searcher
-      POSTGRES_PASSWORD: searcher
-      POSTGRES_DB: searcher
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-searcher}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-searcher}
+      POSTGRES_DB: ${POSTGRES_DB:-searcher}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U searcher -d searcher"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
-      timeout: 3s
-      retries: 10
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    # Host access is intentionally disabled by default. Use docker-compose.dev.yml
+    # if you need psql from the host; it binds to 127.0.0.1 only.
 
-  backend:
-    build: ./backend
+  model-init:
+    build:
+      context: .
+      dockerfile: deploy/model-init/Dockerfile
+    restart: "no"
     environment:
-      DATABASE_URL: postgresql://searcher:searcher@postgres:5432/searcher
+      MODEL_DIR: /models
+      MODEL_REVISION: ${MODEL_REVISION:-}
+    volumes:
+      - model-data:/models
+    security_opt:
+      - no-new-privileges:true
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-searcher}:${POSTGRES_PASSWORD:-searcher}@db:5432/${POSTGRES_DB:-searcher}}
       SERVER_HOST: 0.0.0.0
-      SERVER_PORT: 8080
-      LOG_LEVEL: info
-      # Artifact store (optional; disable to run without it)
-      ARTIFACT_STORE_ENABLED: "false"
-      MINIO_ENDPOINT: ""
-      MINIO_ACCESS_KEY: ""
-      MINIO_SECRET_KEY: ""
-      MINIO_BUCKET: ""
-      MINIO_REGION: us-east-1
-      MINIO_USE_SSL: "false"
+      SERVER_PORT: "8080"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+      ARTIFACT_STORE_ENABLED: ${ARTIFACT_STORE_ENABLED:-false}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-sutra}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-sutra-local-only-change-me}
+      MINIO_BUCKET: ${MINIO_BUCKET:-sutra-artifacts}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+
+      YTDLP_BINARY: ${YTDLP_BINARY:-/usr/local/bin/yt-dlp}
+      YTDLP_TIMEOUT_SECONDS: ${YTDLP_TIMEOUT_SECONDS:-120}
+      TRANSCRIPT_MAX_UPLOAD_MB: ${TRANSCRIPT_MAX_UPLOAD_MB:-20}
+      TRANSCRIPT_MAX_CONCURRENT_INGESTIONS: ${TRANSCRIPT_MAX_CONCURRENT_INGESTIONS:-2}
+
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-small-en-v1.5}
+      EMBEDDING_MODEL_VERSION: ${EMBEDDING_MODEL_VERSION:-v1.5}
+      EMBEDDING_ONNX_PATH: ${EMBEDDING_ONNX_PATH:-/models/bge-small-en-v1.5/model.onnx}
+      EMBEDDING_TOKENIZER_PATH: ${EMBEDDING_TOKENIZER_PATH:-/models/bge-small-en-v1.5/tokenizer.json}
+      ONNXRUNTIME_SHARED_LIBRARY_PATH: ${ONNXRUNTIME_SHARED_LIBRARY_PATH:-/opt/onnxruntime/lib/libonnxruntime.so}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-384}
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-32}
+      EMBEDDING_MAX_TOKENS: ${EMBEDDING_MAX_TOKENS:-512}
+      EMBEDDING_ONNX_THREADS: ${EMBEDDING_ONNX_THREADS:-4}
+      EMBEDDING_TIMEOUT: ${EMBEDDING_TIMEOUT:-5m}
+      PROCESSING_WORKERS: ${PROCESSING_WORKERS:-2}
+      SHUTDOWN_TIMEOUT_SECONDS: ${SHUTDOWN_TIMEOUT_SECONDS:-15}
+
+      SEARCH_CANDIDATE_POOL: ${SEARCH_CANDIDATE_POOL:-100}
+      SEARCH_RRF_K: ${SEARCH_RRF_K:-60}
+      SEARCH_TIMEOUT: ${SEARCH_TIMEOUT:-10s}
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+    volumes:
+      - model-data:/models:ro
     depends_on:
-      postgres:
+      db:
+        condition: service_healthy
+      model-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/readyz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:8080"
+    depends_on:
+      api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
 
-  frontend:
-    build: ./frontend
+  # Optional artifact storage. It is not required for ingestion, search or the
+  # UI; structured transcript cues always live in PostgreSQL. Start it with:
+  #   docker compose --profile artifacts up -d
+  # and set ARTIFACT_STORE_ENABLED=true in .env.
+  minio:
+    image: ${MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z}
+    profiles: ["artifacts"]
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
     environment:
-      # Preview server proxies /api to the backend over the compose network.
-      VITE_API_PROXY_TARGET: http://backend:8080
-    ports:
-      - "4173:4173"
-    depends_on:
-      backend:
-        condition: service_healthy
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-sutra}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-sutra-local-only-change-me}
+    volumes:
+      - minio-data:/data
+    security_opt:
+      - no-new-privileges:true
+    # No host ports by default. Use docker-compose.dev.yml for localhost-only
+    # access to the API (9000) and console (9001).
 
 volumes:
   postgres-data:
+  model-data:
+  minio-data:
