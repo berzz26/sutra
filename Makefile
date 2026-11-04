@@ -3,7 +3,8 @@ COMPOSE ?= docker compose
 DEV_COMPOSE := $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
 
 .PHONY: help up down logs ps restart build test test-api test-frontend lint fmt clean \
-	db-shell db-backup db-restore dev dev-deps fetch-model fetch-onnxruntime smoke config
+	db-shell db-backup db-restore dev dev-deps run-api run-frontend fetch-model \
+	fetch-onnxruntime smoke config
 
 help:
 	@echo "Sutra developer commands"
@@ -19,6 +20,8 @@ help:
 	@echo "  make fmt              Format Go sources"
 	@echo "  make clean            Remove generated build artifacts (keeps volumes/data)"
 	@echo "  make dev              Run PostgreSQL in Docker, API and Vite on the host"
+	@echo "  make run-api          Run the API directly on the host"
+	@echo "  make run-frontend     Run the Vite frontend directly on the host"
 	@echo "  make db-shell         Open psql in the database container"
 	@echo "  make db-backup        Write a compressed dump to backups/"
 	@echo "  make db-restore FILE=backups/....dump"
@@ -96,6 +99,12 @@ dev: dev-deps
 	( cd frontend && npm run dev ) & web_pid=$$!; \
 	trap 'kill $$api_pid $$web_pid 2>/dev/null || true' INT TERM EXIT; \
 	wait
+
+run-api:
+	cd api && set -a && . ../.env && set +a && go run ./cmd/server
+
+run-frontend:
+	cd frontend && npm run dev
 
 fetch-model:
 	./scripts/fetch-model.sh

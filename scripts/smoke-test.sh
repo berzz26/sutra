@@ -9,7 +9,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-BASE_URL="${BASE_URL:-http://localhost:3000}"
+BASE_URL="${BASE_URL:-http://localhost:18080}"
 API="$BASE_URL/api/v1"
 FIXTURE="${1:-$PWD/scripts/fixtures/sample.vtt}"
 
