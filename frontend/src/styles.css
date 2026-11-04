@@ -564,10 +564,10 @@ a {
 .result-excerpt {
     color: var(--muted);
     font-size: 13px;
-    line-height: 1.7;
+    line-height: 1.8;
     margin: 0;
     display: -webkit-box;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 4;
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
@@ -1765,8 +1765,8 @@ a {
 
 .result-excerpt {
     font-size: 14px;
-    line-height: 1.75;
-    -webkit-line-clamp: 5;
+    line-height: 1.8;
+    -webkit-line-clamp: 4;
 }
 
 .result-footer {

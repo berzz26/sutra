@@ -168,7 +168,8 @@ export function SearchPage() {
 
 function ResultCard({ result, video, query, index }: { result: SearchResult; video?: VideoRecord; query: string; index: number }) {
   const link = result.timestamp_url || result.original_url || video?.original_url || '#'
-  return <article className="result-card" style={{ '--delay': `${index * 55}ms` } as CSSProperties}><div className="result-media"><Thumbnail src={video?.thumbnail_url} /><Badge tone="accent"><Clock3 size={12} /> {formatMs(result.start_ms)} – {formatMs(result.end_ms)}</Badge></div><div className="result-content"><div className="result-meta"><span>{video?.source_type === 'youtube' ? 'YouTube' : 'Transcript file'}</span><span>{video?.channel || 'Video source'}</span>{video?.language && <span>{video.language}</span>}</div><h3>{result.video_title || video?.title || 'Untitled video'}</h3><p className="result-excerpt"><Highlight text={result.text} query={query} /></p><div className="result-footer"><span><Clock3 size={13} /> Relevant moment</span><a href={link} target="_blank" rel="noreferrer">Open moment <ArrowUpRight size={14} /></a></div></div></article>
+  const excerpt = buildTranscriptExcerpt(result.text, query)
+  return <article className="result-card" style={{ '--delay': `${index * 55}ms` } as CSSProperties}><div className="result-media"><Thumbnail src={video?.thumbnail_url} /><Badge tone="accent"><Clock3 size={12} /> {formatMs(result.start_ms)} – {formatMs(result.end_ms)}</Badge></div><div className="result-content"><div className="result-meta"><span>{video?.source_type === 'youtube' ? 'YouTube' : 'Transcript file'}</span><span>{video?.channel || 'Video source'}</span>{video?.language && <span>{video.language}</span>}</div><h3>{result.video_title || video?.title || 'Untitled video'}</h3><p className="result-excerpt"><Highlight text={excerpt} query={query} /></p><div className="result-footer"><span><Clock3 size={13} /> Relevant moment</span><a href={link} target="_blank" rel="noreferrer">Open moment <ArrowUpRight size={14} /></a></div></div></article>
 }
 
 function Thumbnail({ src }: { src?: string }) {
@@ -208,11 +209,95 @@ function PipelineProgress({ pipeline }: { pipeline: { progress: number; stage: s
   return <div className={`pipeline-progress ${failed ? 'failed' : ''}`} aria-live="polite"><ProgressiveFluxLoader value={pipeline.progress} phases={phases} /><div className="pipeline-counts">{pipeline.state && <small>{pipeline.state.cue_count} cues · {pipeline.state.embedding_count} embeddings generated</small>}<span>{pipeline.progress}%</span></div></div>
 }
 
+const QUERY_STOPWORDS = new Set(['about', 'after', 'again', 'also', 'been', 'being', 'could', 'does', 'from', 'have', 'into', 'more', 'most', 'only', 'other', 'should', 'some', 'than', 'that', 'their', 'there', 'these', 'they', 'this', 'those', 'through', 'what', 'when', 'where', 'which', 'while', 'with', 'would', 'your'])
+
+function normalizeTranscriptText(text: string) {
+  const withoutMarkers = text.replace(/(?:^|\s)(?:>>\s*)+/g, ' ')
+  const normalized = withoutMarkers.replace(/\s+/g, ' ').replace(/\s+([,.;!?])/g, '$1').trim()
+  return collapseRepeatedPhrases(normalized)
+}
+
+function collapseRepeatedPhrases(text: string) {
+  const words = text.split(' ')
+  const output: string[] = []
+  let index = 0
+  while (index < words.length) {
+    let collapsed = false
+    const maximumPhraseLength = Math.min(12, Math.floor((words.length - index) / 2))
+    for (let phraseLength = maximumPhraseLength; phraseLength >= 3; phraseLength -= 1) {
+      const first = words.slice(index, index + phraseLength).map(normalizeComparisonWord)
+      const second = words.slice(index + phraseLength, index + phraseLength * 2).map(normalizeComparisonWord)
+      if (first.every(Boolean) && first.join(' ') === second.join(' ')) {
+        output.push(...words.slice(index, index + phraseLength))
+        index += phraseLength * 2
+        collapsed = true
+        break
+      }
+    }
+    if (!collapsed) {
+      output.push(words[index])
+      index += 1
+    }
+  }
+  return output.join(' ')
+}
+
+function normalizeComparisonWord(word: string) {
+  return word.toLocaleLowerCase().replace(/[^\p{L}\p{N}']+/gu, '')
+}
+
+function meaningfulQueryTerms(query: string) {
+  return query.split(/\s+/).map(normalizeComparisonWord).filter((term, index, terms) => term.length >= 2 && !QUERY_STOPWORDS.has(term) && terms.indexOf(term) === index).slice(0, 8)
+}
+
+function buildTranscriptExcerpt(text: string, query: string) {
+  const normalized = normalizeTranscriptText(text)
+  const maximumCharacters = 320
+  if (normalized.length <= maximumCharacters) return normalized
+
+  const terms = meaningfulQueryTerms(query)
+  const lowered = normalized.toLocaleLowerCase()
+  const matchIndex = terms.map((term) => lowered.indexOf(term)).filter((index) => index >= 0).sort((a, b) => a - b)[0] ?? 0
+  let start = sentenceStart(normalized, matchIndex)
+  let end = sentenceEnd(normalized, matchIndex)
+
+  while (start > 0) {
+    const previousStart = sentenceStart(normalized, start - 1)
+    if (end - previousStart > maximumCharacters) break
+    start = previousStart
+  }
+  while (end < normalized.length) {
+    const nextEnd = sentenceEnd(normalized, end)
+    if (nextEnd - start > maximumCharacters) break
+    end = nextEnd
+  }
+
+  if (end - start > maximumCharacters) {
+    start = Math.max(0, matchIndex - Math.floor(maximumCharacters * 0.35))
+    end = Math.min(normalized.length, start + maximumCharacters)
+    while (start > 0 && normalized[start] !== ' ') start += 1
+    while (end < normalized.length && normalized[end] !== ' ') end -= 1
+  }
+
+  const excerpt = normalized.slice(start, end).trim()
+  return `${start > 0 ? '… ' : ''}${excerpt}${end < normalized.length ? ' …' : ''}`
+}
+
+function sentenceStart(text: string, index: number) {
+  const boundary = Math.max(text.lastIndexOf('.', index - 1), text.lastIndexOf('!', index - 1), text.lastIndexOf('?', index - 1))
+  return boundary < 0 ? 0 : boundary + 1
+}
+
+function sentenceEnd(text: string, index: number) {
+  const boundaries = [text.indexOf('.', index), text.indexOf('!', index), text.indexOf('?', index)].filter((boundary) => boundary >= 0)
+  return boundaries.length ? Math.min(...boundaries) + 1 : text.length
+}
+
 function Highlight({ text, query }: { text: string; query: string }) {
-  const terms = query.trim().split(/\s+/).filter((term) => term.length > 2).slice(0, 6)
+  const terms = meaningfulQueryTerms(query)
   if (!terms.length) return <>{text}</>
-  const pattern = new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'gi')
-  return <>{text.split(pattern).map((part, index) => terms.some((term) => part.toLowerCase() === term.toLowerCase()) ? <mark key={index}>{part}</mark> : part)}</>
+  const pattern = new RegExp(`\\b(${terms.map(escapeRegExp).join('|')})\\b`, 'gi')
+  return <>{text.split(pattern).map((part, index) => terms.some((term) => part.toLocaleLowerCase() === term) ? <mark key={index}>{part}</mark> : part)}</>
 }
 
 function escapeRegExp(value: string) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
