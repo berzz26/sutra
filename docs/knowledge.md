@@ -6,6 +6,44 @@ current architecture and operator documentation live in the other files in this
 directory. Append a new entry after a significant implementation or phase.
 See `docs/rules.md`.
 
+## Fix — Full transcript copy/download (2026-11-08)
+
+**Problem**
+
+- Copy and "Download .srt/.vtt" on a video card produced only the first
+  1–2 minutes of the conversation. The transcript endpoint is paginated
+  (`limit` default 50, `page()` in `api/internal/api/ingestion.go`), and the
+  frontend called `GET /api/v1/videos/:id/transcript` without parameters, so
+  only the first page's cues were ever loaded — the database was fine
+  (verified: cue counts up to 14,774 fully stored).
+
+**Implemented**
+
+- `frontend/src/api/endpoints.ts`: `getTranscript` now accepts `limit` /
+  `offset` and builds the query string.
+- `frontend/src/pages/SearchPage.tsx`:
+  - `fetchAllCues` pages through the transcript endpoint (200 per page)
+    until a short page or the transcript's declared `cue_count` is reached.
+  - `showTranscript` loads the full transcript with a visible loading state
+    before enabling Copy/Download.
+  - The viewer renders cues progressively (400 at a time, "Show more") so a
+    15k-cue transcript does not freeze the DOM; Copy/Download always encode
+    the complete set.
+- `frontend/src/styles.css`: styles for the loading row and "show more"
+  footer.
+
+**Tested**
+
+- `npm run build` (tsc strict + vite) — clean.
+- Live backend pagination check: tail page `?limit=200&offset=14600`
+  returns 174 cues starting at seq 14601; a full loop over the WAN Show
+  April 3, 2026 video fetched **14,774/14,774 cues across 74 pages**.
+
+**Known limitations**
+
+- Copying a full 15k-cue transcript puts a ~1 MB string on the clipboard;
+  browsers accept it but some autofocus contexts can be slow.
+
 ## Phase 3 — Search timing metadata (2026-11-02)
 
 **Implemented**

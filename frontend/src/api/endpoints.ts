@@ -36,7 +36,13 @@ export function ingestYouTube(url: string, language: string, subtitle?: Subtitle
   })
 }
 export function uploadTranscript(data: FormData): Promise<Video> { return apiClient.postForm('/api/v1/transcripts', data) }
-export function getTranscript(id: string): Promise<{ cues: Cue[] }> { return apiClient.get(`/api/v1/videos/${id}/transcript`) }
+export function getTranscript(id: string, limit?: number, offset?: number): Promise<{ cues: Cue[] }> {
+  const params = new URLSearchParams()
+  if (limit !== undefined) params.set('limit', String(limit))
+  if (offset !== undefined) params.set('offset', String(offset))
+  const query = params.toString()
+  return apiClient.get(`/api/v1/videos/${id}/transcript${query ? `?${query}` : ''}`)
+}
 export function getProcessing(id: string): Promise<ProcessingState> { return apiClient.get(`/api/v1/videos/${id}/processing`) }
 export function deleteVideo(id: string): Promise<void> { return apiClient.delete(`/api/v1/videos/${id}`) }
 export function search(query: string, limit = 10, videoId?: string): Promise<SearchResponse> {

@@ -30,6 +30,7 @@ export function SearchPage() {
   const [searchMessage, setSearchMessage] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
   const [cues, setCues] = useState<Cue[]>([])
+  const [transcriptLoading, setTranscriptLoading] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<VideoRecord | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -82,9 +83,34 @@ export function SearchPage() {
     try { const data = new FormData(); data.append('file', file); if (title) data.append('title', title); if (originalURL) data.append('original_url', originalURL); if (language) data.append('language', language); const result = await uploadTranscript(data); setPipeline({ progress: 45, stage: 'queued for indexing', state: null }); await waitForProcessing(result.id); setCurrentVideo(result); setSearchScope('video'); setSearchResults([]); setSearchDuration(null); setSearchMessage(null); setFile(null); setTitle(''); setOriginalURL(''); setLanguage('en'); if (fileInput.current) fileInput.current.value = ''; toast.success('Transcript indexed and ready to search'); await refresh() } catch (cause) { toast.error(errorText(cause)); setPipeline((current) => current ? { ...current, stage: 'failed' } : null) } finally { setBusy(false) }
   }
 
+  // The transcript endpoint is paginated (default limit 50); copy/download
+  // need the whole conversation, so fetch every page before showing it.
+  const TRANSCRIPT_PAGE_SIZE = 200
+
+  const fetchAllCues = async (video: VideoRecord): Promise<Cue[]> => {
+    const expected = video.transcript?.cue_count
+    const all: Cue[] = []
+    let offset = 0
+    for (;;) {
+      const page = await getTranscript(video.id, TRANSCRIPT_PAGE_SIZE, offset)
+      all.push(...page.cues)
+      if (page.cues.length < TRANSCRIPT_PAGE_SIZE) break
+      offset += page.cues.length
+      if (expected !== undefined && offset >= expected) break
+    }
+    return all
+  }
+
   const showTranscript = async (video: VideoRecord) => {
     if (open === video.id) { setOpen(null); return }
-    try { setCues((await getTranscript(video.id)).cues); setOpen(video.id) } catch (cause) { toast.error(errorText(cause)) }
+    setTranscriptLoading(true)
+    setOpen(video.id)
+    try {
+      setCues(await fetchAllCues(video))
+    } catch (cause) {
+      setOpen(null)
+      toast.error(errorText(cause))
+    } finally { setTranscriptLoading(false) }
   }
 
   const confirmDelete = async () => {
@@ -161,7 +187,7 @@ export function SearchPage() {
       </section>}
     </div>}
 
-    <section className="library-section" id="library" aria-labelledby="library-heading"><div className="section-heading"><div><p className="eyebrow">Your collection</p><h2 id="library-heading">Video library</h2></div>{videos.length > 0 && <Badge tone="muted">{videos.length} {videos.length === 1 ? 'source' : 'sources'}</Badge>}</div>{loadingVideos ? <div className="library-list"><Skeleton className="library-skeleton" /><Skeleton className="library-skeleton" /></div> : videos.length === 0 ? <div className="empty-library"><FolderOpen size={22} /><h3>Your library is quiet</h3><p>Add a YouTube video or transcript above to start searching.</p></div> : <div className="library-list">{videos.map((video) => <VideoCard key={video.id} video={video} open={open === video.id} cues={cues} onToggle={() => void showTranscript(video)} onDelete={() => setDeleteTarget(video)} />)}</div>}</section>
+    <section className="library-section" id="library" aria-labelledby="library-heading"><div className="section-heading"><div><p className="eyebrow">Your collection</p><h2 id="library-heading">Video library</h2></div>{videos.length > 0 && <Badge tone="muted">{videos.length} {videos.length === 1 ? 'source' : 'sources'}</Badge>}</div>{loadingVideos ? <div className="library-list"><Skeleton className="library-skeleton" /><Skeleton className="library-skeleton" /></div> : videos.length === 0 ? <div className="empty-library"><FolderOpen size={22} /><h3>Your library is quiet</h3><p>Add a YouTube video or transcript above to start searching.</p></div> : <div className="library-list">{videos.map((video) => <VideoCard key={video.id} video={video} open={open === video.id} cues={cues} loading={transcriptLoading} onToggle={() => void showTranscript(video)} onDelete={() => setDeleteTarget(video)} />)}</div>}</section>
     <AlertDialog open={deleteTarget !== null} title="Remove this video?" description="This deletes the video, transcript cues, and indexed moments. This cannot be undone." confirmLabel="Delete video" onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />
   </>
 }
@@ -178,9 +204,14 @@ function Thumbnail({ src }: { src?: string }) {
   return <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} />
 }
 
-function VideoCard({ video, open, cues, onToggle, onDelete }: { video: VideoRecord; open: boolean; cues: Cue[]; onToggle: () => void; onDelete: () => void }) {
+function VideoCard({ video, open, cues, loading, onToggle, onDelete }: { video: VideoRecord; open: boolean; cues: Cue[]; loading: boolean; onToggle: () => void; onDelete: () => void }) {
+  // Full transcripts can exceed 15k cues; render them progressively while
+  // copy/download always encode the complete set.
+  const RENDER_BATCH = 400
+  const [renderLimit, setRenderLimit] = useState(RENDER_BATCH)
   const format = video.transcript?.original_format === 'srt' ? 'srt' : 'vtt'
   const transcript = formatTranscript(cues, format)
+  const hasTranscript = cues.length > 0
   const copyTranscript = async () => {
     try {
       if (navigator.clipboard?.writeText) {
@@ -188,7 +219,7 @@ function VideoCard({ video, open, cues, onToggle, onDelete }: { video: VideoReco
       } else if (!copyTextFallback(transcript)) {
         throw new Error('copy failed')
       }
-      toast.success('Transcript copied to clipboard')
+      toast.success(`Copied all ${cues.length} cues`)
     } catch { toast.error('Clipboard access is unavailable. Try downloading the transcript instead.') }
   }
   const downloadTranscript = () => {
@@ -200,7 +231,7 @@ function VideoCard({ video, open, cues, onToggle, onDelete }: { video: VideoReco
     anchor.click()
     URL.revokeObjectURL(href)
   }
-  return <Card className="video-card"><div className="video-card-main"><div className="video-thumb"><Video size={20} /><span>{video.source_type === 'youtube' ? 'YT' : 'FILE'}</span></div><div className="video-info"><div className="video-heading"><h3 title={video.title}>{video.title || 'Untitled video'}</h3><Badge tone={video.status === 'ready' || video.status === 'succeeded' ? 'success' : 'muted'}>{video.status}</Badge></div><div className="video-meta"><span>{video.source_type === 'youtube' ? 'YouTube' : 'Uploaded transcript'}</span><span>{video.language || 'Language unknown'}</span><span>{video.transcript?.cue_count ?? 0} cues</span></div></div><div className="video-actions"><Button variant="secondary" size="sm" onClick={onToggle}>{open ? 'Hide transcript' : 'View transcript'}</Button><Button variant="ghost" size="icon" aria-label={`Delete ${video.title || 'video'}`} onClick={onDelete}><Trash2 size={16} /></Button></div></div>{open && <div className="transcript-viewer"><div className="transcript-header"><div><span>Transcript cues</span><Badge tone="muted">{cues.length} cues</Badge></div><div className="transcript-actions"><Button variant="ghost" size="sm" disabled={cues.length === 0} onClick={() => void copyTranscript()}><Copy size={14} /> Copy</Button><Button variant="ghost" size="sm" disabled={cues.length === 0} onClick={downloadTranscript}><Download size={14} /> Download .{format}</Button></div></div>{cues.map((cue) => <div className="cue-row" key={cue.id}><time>{formatMs(cue.start_ms)}</time><p>{cue.text}</p></div>)}</div>}</Card>
+  return <Card className="video-card"><div className="video-card-main"><div className="video-thumb"><Video size={20} /><span>{video.source_type === 'youtube' ? 'YT' : 'FILE'}</span></div><div className="video-info"><div className="video-heading"><h3 title={video.title}>{video.title || 'Untitled video'}</h3><Badge tone={video.status === 'ready' || video.status === 'succeeded' ? 'success' : 'muted'}>{video.status}</Badge></div><div className="video-meta"><span>{video.source_type === 'youtube' ? 'YouTube' : 'Uploaded transcript'}</span><span>{video.language || 'Language unknown'}</span><span>{video.transcript?.cue_count ?? 0} cues</span></div></div><div className="video-actions"><Button variant="secondary" size="sm" onClick={onToggle}>{open ? 'Hide transcript' : 'View transcript'}</Button><Button variant="ghost" size="icon" aria-label={`Delete ${video.title || 'video'}`} onClick={onDelete}><Trash2 size={16} /></Button></div></div>{open && <div className="transcript-viewer"><div className="transcript-header"><div><span>Transcript cues</span><Badge tone="muted">{loading ? <Loader2 className="spin" size={12} /> : `${cues.length} cues`}</Badge></div><div className="transcript-actions"><Button variant="ghost" size="sm" disabled={!hasTranscript} onClick={() => void copyTranscript()}><Copy size={14} /> Copy</Button><Button variant="ghost" size="sm" disabled={!hasTranscript} onClick={downloadTranscript}><Download size={14} /> Download .{format}</Button></div></div>{loading && <div className="transcript-loading"><Loader2 className="spin" size={16} /> Loading full transcript…</div>}{!loading && <>{cues.slice(0, renderLimit).map((cue) => <div className="cue-row" key={cue.id}><time>{formatMs(cue.start_ms)}</time><p>{cue.text}</p></div>)}{cues.length > renderLimit && <div className="transcript-more"><small>Showing {renderLimit} of {cues.length} cues</small><Button variant="secondary" size="sm" onClick={() => setRenderLimit((limit) => limit + RENDER_BATCH)}>Show more</Button></div>}</>}</div>}</Card>
 }
 
 function PipelineProgress({ pipeline }: { pipeline: { progress: number; stage: string; state: ProcessingState | null } }) {
