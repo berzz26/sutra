@@ -6,6 +6,50 @@ current architecture and operator documentation live in the other files in this
 directory. Append a new entry after a significant implementation or phase.
 See `docs/rules.md`.
 
+## Fix — Find-video tab: fast typing, in-place card, no library list (2026-11-08)
+
+**Problem**
+
+- Every keystroke in the Find-video search re-rendered the whole page:
+  the 137-row VideoCard library list and any open transcript (hundreds of
+  cue rows) re-mounted on each character, making typing feel seconds slow.
+- Selecting a result auto-scrolled the page down to a detail section
+  below the library; user wants results and detail where they typed.
+- Selected-video card lacked a thumbnail; the video library list should
+  not appear on that tab at all.
+
+**Implemented**
+
+- `frontend/src/pages/SearchPage.tsx`:
+  - Filtering uses `useDeferredValue` + `useMemo` on the query, so typing
+    renders instantly against the previous result list.
+  - `BrowseMetadata` / `BrowseTranscript` wrapped in `memo` — cue lists
+    and metadata panels no longer re-render while typing. Transcript
+    render limit resets when switching videos.
+  - Detail card (thumbnail + metadata grid + time-wise transcript, with
+    Copy / Download .srt/.vtt) renders directly under the results inside
+    the same browse pane; all `scrollIntoView` calls removed.
+  - Video library list section (`Your collection`) is hidden while the
+    Find-video tab is active — the page shows only search + results.
+  - Result rows show a plain 64×36 image thumbnail (nothing rendered
+    when there is no image, instead of the odd fallback box); the
+    selected card keeps the full `Thumbnail` fallback in its media
+    column.
+- `frontend/src/styles.css`: reworked `.browse-*` block — framed and
+  accent-focused search bar, `selected` result state, thumbnail media
+  column with accent-bordered metadata card (accent left edge + accent
+  gradient), transcript as a soft panel with bordered header strip and
+  per-row dividers. Dead `.browse-detail` rules removed.
+
+**Tested**
+
+- `npm run build` (tsc strict + vite) — clean.
+
+**Known limitations**
+
+- Search still matches only title/channel text; semantic or server-side
+  search over the whole library remains future work.
+
 ## Fix — Library-wide title search + browse tab layout (2026-11-08)
 
 **Problem**

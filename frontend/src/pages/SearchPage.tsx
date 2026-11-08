@@ -1,4 +1,4 @@
-import { FormEvent, type CSSProperties, useEffect, useRef, useState } from 'react'
+import { FormEvent, memo, type CSSProperties, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUpRight, Check, Clock3, Copy, Download, FileText, FolderOpen, Library, Loader2, Search as SearchIcon, Trash2, Upload, Video, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApiError } from '../api/client'
@@ -118,17 +118,13 @@ export function SearchPage() {
   }
 
   // Library browser tab: pick a video by title, then inspect its full
-  // transcript with its metadata (rendered below the library section).
+  // transcript with its metadata (card renders right under the results).
   const openBrowseVideo = async (video: VideoRecord) => {
-    const alreadyLoaded = browseSelected?.id === video.id && browseCues.length >= (video.transcript?.cue_count ?? 0)
-    if (alreadyLoaded) { document.getElementById('browse-detail')?.scrollIntoView({ behavior: 'smooth' }); return }
+    if (browseSelected?.id === video.id && browseCues.length >= (video.transcript?.cue_count ?? 0)) return
     setBrowseSelected(video)
     setBrowseLoading(true)
     setBrowseCues([])
-    try {
-      setBrowseCues(await fetchAllCues(video))
-      setTimeout(() => document.getElementById('browse-detail')?.scrollIntoView({ behavior: 'smooth' }), 0)
-    } catch (cause) { toast.error(errorText(cause)) } finally { setBrowseLoading(false) }
+    try { setBrowseCues(await fetchAllCues(video)) } catch (cause) { toast.error(errorText(cause)) } finally { setBrowseLoading(false) }
   }
 
   const confirmDelete = async () => {
@@ -157,10 +153,12 @@ export function SearchPage() {
   }
 
 
-  const browseFilter = browseQuery.trim().toLowerCase()
-  const browseResults = browseFilter
+  // Defer the filter so typing stays instant; the page only re-renders the
+  // result list, never the cue rows or the rest of the page.
+  const browseFilter = useDeferredValue(browseQuery).trim().toLowerCase()
+  const browseResults = useMemo(() => browseFilter
     ? videos.filter((video) => (video.title || '').toLowerCase().includes(browseFilter) || (video.channel || '').toLowerCase().includes(browseFilter))
-    : videos
+    : videos, [videos, browseFilter])
 
   return <>
     <section className="hero-section">
@@ -187,8 +185,10 @@ export function SearchPage() {
           <div className="browse-results" aria-label="Matching videos">
             {videos.length === 0 && <div className="browse-empty"><FolderOpen size={20} /><p>No videos in your library yet. Bring one in from the tabs above.</p></div>}
             {videos.length > 0 && browseResults.length === 0 && <div className="browse-empty"><p>No videos match “{browseQuery.trim()}”.</p></div>}
-            {browseResults.map((video) => <button type="button" key={video.id} className={`browse-result ${browseSelected?.id === video.id ? 'selected' : ''}`} onClick={() => void openBrowseVideo(video)}><span className="browse-result-copy"><strong title={video.title}>{video.title || 'Untitled video'}</strong><small>{video.source_type === 'youtube' ? 'YouTube' : 'Transcript file'}{video.channel && ` · ${video.channel}`}{video.duration_ms && ` · ${formatMs(video.duration_ms)}`}</small></span><Badge tone={video.status === 'ready' ? 'success' : 'muted'}>{video.status}</Badge></button>)}
+            {browseResults.map((video) => <button type="button" key={video.id} className={`browse-result ${browseSelected?.id === video.id ? 'selected' : ''}`} onClick={() => void openBrowseVideo(video)}>{video.thumbnail_url && <img className="browse-result-thumb" src={video.thumbnail_url} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} />}<span className="browse-result-copy"><strong title={video.title}>{video.title || 'Untitled video'}</strong><small>{video.source_type === 'youtube' ? 'YouTube' : 'Transcript file'}{video.channel && ` · ${video.channel}`}{video.duration_ms && ` · ${formatMs(video.duration_ms)}`}</small></span><Badge tone={video.status === 'ready' ? 'success' : 'muted'}>{video.status}</Badge></button>)}
           </div>
+          {browseSelected && <BrowseMetadata video={browseSelected} />}
+          {browseSelected && <BrowseTranscript video={browseSelected} cues={browseCues} loading={browseLoading} />}
         </div>}
         {pipeline && (busy || pipeline.stage === 'failed') && <PipelineProgress pipeline={pipeline} />}
       </Card>
@@ -223,8 +223,7 @@ export function SearchPage() {
       </section>}
     </div>}
 
-    <section className="library-section" id="library" aria-labelledby="library-heading"><div className="section-heading"><div><p className="eyebrow">Your collection</p><h2 id="library-heading">Video library</h2></div>{videos.length > 0 && <Badge tone="muted">{videos.length} {videos.length === 1 ? 'source' : 'sources'}</Badge>}</div>{loadingVideos ? <div className="library-list"><Skeleton className="library-skeleton" /><Skeleton className="library-skeleton" /></div> : videos.length === 0 ? <div className="empty-library"><FolderOpen size={22} /><h3>Your library is quiet</h3><p>Add a YouTube video or transcript above to start searching.</p></div> : <div className="library-list">{videos.map((video) => <VideoCard key={video.id} video={video} open={open === video.id} cues={cues} loading={transcriptLoading} onToggle={() => void showTranscript(video)} onDelete={() => setDeleteTarget(video)} />)}</div>}</section>
-    {ingestTab === 'browse' && browseSelected && <section className="browse-detail" id="browse-detail" aria-label="Selected video detail"><BrowseMetadata video={browseSelected} /><BrowseTranscript video={browseSelected} cues={browseCues} loading={browseLoading} /></section>}
+    {ingestTab !== 'browse' && <section className="library-section" id="library" aria-labelledby="library-heading"><div className="section-heading"><div><p className="eyebrow">Your collection</p><h2 id="library-heading">Video library</h2></div>{videos.length > 0 && <Badge tone="muted">{videos.length} {videos.length === 1 ? 'source' : 'sources'}</Badge>}</div>{loadingVideos ? <div className="library-list"><Skeleton className="library-skeleton" /><Skeleton className="library-skeleton" /></div> : videos.length === 0 ? <div className="empty-library"><FolderOpen size={22} /><h3>Your library is quiet</h3><p>Add a YouTube video or transcript above to start searching.</p></div> : <div className="library-list">{videos.map((video) => <VideoCard key={video.id} video={video} open={open === video.id} cues={cues} loading={transcriptLoading} onToggle={() => void showTranscript(video)} onDelete={() => setDeleteTarget(video)} />)}</div>}</section>}
     <AlertDialog open={deleteTarget !== null} title="Remove this video?" description="This deletes the video, transcript cues, and indexed moments. This cannot be undone." confirmLabel="Delete video" onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />
   </>
 }
@@ -261,7 +260,7 @@ function VideoCard({ video, open, cues, loading, onToggle, onDelete }: { video: 
   return <Card className="video-card"><div className="video-card-main"><div className="video-thumb"><Video size={20} /><span>{video.source_type === 'youtube' ? 'YT' : 'FILE'}</span></div><div className="video-info"><div className="video-heading"><h3 title={video.title}>{video.title || 'Untitled video'}</h3><Badge tone={video.status === 'ready' || video.status === 'succeeded' ? 'success' : 'muted'}>{video.status}</Badge></div><div className="video-meta"><span>{video.source_type === 'youtube' ? 'YouTube' : 'Uploaded transcript'}</span><span>{video.language || 'Language unknown'}</span><span>{video.transcript?.cue_count ?? 0} cues</span></div></div><div className="video-actions"><Button variant="secondary" size="sm" onClick={onToggle}>{open ? 'Hide transcript' : 'View transcript'}</Button><Button variant="ghost" size="icon" aria-label={`Delete ${video.title || 'video'}`} onClick={onDelete}><Trash2 size={16} /></Button></div></div>{open && <div className="transcript-viewer"><div className="transcript-header"><div><span>Transcript cues</span><Badge tone="muted">{loading ? <Loader2 className="spin" size={12} /> : `${cues.length} cues`}</Badge></div><div className="transcript-actions"><Button variant="ghost" size="sm" disabled={!hasTranscript} onClick={() => void copyTranscript()}><Copy size={14} /> Copy</Button><Button variant="ghost" size="sm" disabled={!hasTranscript} onClick={downloadTranscript}><Download size={14} /> Download .{format}</Button></div></div>{loading && <div className="transcript-loading"><Loader2 className="spin" size={16} /> Loading full transcript…</div>}{!loading && <>{cues.slice(0, renderLimit).map((cue) => <div className="cue-row" key={cue.id}><time>{formatMs(cue.start_ms)}</time><p>{cue.text}</p></div>)}{cues.length > renderLimit && <div className="transcript-more"><small>Showing {renderLimit} of {cues.length} cues</small><Button variant="secondary" size="sm" onClick={() => setRenderLimit((limit) => limit + RENDER_BATCH)}>Show more</Button></div>}</>}</div>}</Card>
 }
 
-function BrowseMetadata({ video }: { video: VideoRecord }) {
+const BrowseMetadata = memo(function BrowseMetadata({ video }: { video: VideoRecord }) {
   const items: Array<[string, string]> = [
     ['Source', video.source_type === 'youtube' ? 'YouTube' : 'Transcript file'],
     ['Channel', video.channel || '—'],
@@ -273,17 +272,19 @@ function BrowseMetadata({ video }: { video: VideoRecord }) {
   ]
   const link = video.original_url || (video.source_type === 'youtube' ? `https://www.youtube.com/watch?v=${video.source_ref}` : null)
   return <section className="browse-metadata" aria-label="Video metadata">
+    <div className="browse-metadata-media"><Thumbnail src={video.thumbnail_url} /></div>
     <div className="browse-metadata-body">
       <div className="browse-metadata-title"><h3 title={video.title}>{video.title || 'Untitled video'}</h3><Badge tone={video.status === 'ready' || video.status === 'succeeded' ? 'success' : 'muted'}>{video.status}</Badge></div>
       <dl className="browse-meta-grid">{items.map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={value}>{value}</dd></div>)}</dl>
       {link && <a className="browse-original-link" href={link} target="_blank" rel="noreferrer">Open original <ArrowUpRight size={13} /></a>}
     </div>
   </section>
-}
+})
 
-function BrowseTranscript({ video, cues, loading }: { video: VideoRecord; cues: Cue[]; loading: boolean }) {
+const BrowseTranscript = memo(function BrowseTranscript({ video, cues, loading }: { video: VideoRecord; cues: Cue[]; loading: boolean }) {
   const RENDER_BATCH = 400
   const [renderLimit, setRenderLimit] = useState(RENDER_BATCH)
+  useEffect(() => setRenderLimit(RENDER_BATCH), [video.id])
   const format = video.transcript?.original_format === 'srt' ? 'srt' : 'vtt'
   const transcript = formatTranscript(cues, format)
   const hasTranscript = cues.length > 0
@@ -307,7 +308,7 @@ function BrowseTranscript({ video, cues, loading }: { video: VideoRecord; cues: 
     {loading && <div className="transcript-loading"><Loader2 className="spin" size={16} /> Loading full transcript…</div>}
     {!loading && <div className="browse-cue-list">{cues.slice(0, renderLimit).map((cue) => <div className="cue-row" key={cue.id}><time>{formatMs(cue.start_ms)}</time><p>{cue.text}</p></div>)}{cues.length > renderLimit && <div className="transcript-more"><small>Showing {renderLimit} of {cues.length} cues</small><Button variant="secondary" size="sm" onClick={() => setRenderLimit((limit) => limit + RENDER_BATCH)}>Show more</Button></div>}</div>}
   </section>
-}
+})
 
 function PipelineProgress({ pipeline }: { pipeline: { progress: number; stage: string; state: ProcessingState | null } }) {
   const failed = pipeline.stage === 'failed'
