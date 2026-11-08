@@ -11,7 +11,7 @@ export function SearchPage() {
   const [currentVideo, setCurrentVideo] = useState<VideoRecord | null>(null)
   const [searchScope, setSearchScope] = useState<'video' | 'library'>('video')
   const [loadingVideos, setLoadingVideos] = useState(true)
-  const [ingestTab, setIngestTab] = useState<'youtube' | 'library' | 'file'>('youtube')
+  const [ingestTab, setIngestTab] = useState<'youtube' | 'library' | 'file' | 'browse'>('youtube')
   const [url, setUrl] = useState('')
   const [language, setLanguage] = useState('en')
   const [title, setTitle] = useState('')
@@ -31,6 +31,10 @@ export function SearchPage() {
   const [open, setOpen] = useState<string | null>(null)
   const [cues, setCues] = useState<Cue[]>([])
   const [transcriptLoading, setTranscriptLoading] = useState(false)
+  const [browseQuery, setBrowseQuery] = useState('')
+  const [browseSelected, setBrowseSelected] = useState<VideoRecord | null>(null)
+  const [browseCues, setBrowseCues] = useState<Cue[]>([])
+  const [browseLoading, setBrowseLoading] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<VideoRecord | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -113,6 +117,16 @@ export function SearchPage() {
     } finally { setTranscriptLoading(false) }
   }
 
+  // Library browser tab: pick a video by title, then inspect its full
+  // transcript with its metadata.
+  const openBrowseVideo = async (video: VideoRecord) => {
+    if (browseSelected?.id === video.id && browseCues.length >= (video.transcript?.cue_count ?? 0)) return
+    setBrowseSelected(video)
+    setBrowseLoading(true)
+    setBrowseCues([])
+    try { setBrowseCues(await fetchAllCues(video)) } catch (cause) { toast.error(errorText(cause)) } finally { setBrowseLoading(false) }
+  }
+
   const confirmDelete = async () => {
     if (!deleteTarget) return
     try { await deleteVideo(deleteTarget.id); setDeleteTarget(null); if (open === deleteTarget.id) setOpen(null); if (currentVideo?.id === deleteTarget.id) { setCurrentVideo(null); setSearchResults([]); setSearchDuration(null); setSearchMessage(null) } toast.success('Video removed from your library'); await refresh() } catch (cause) { toast.error(errorText(cause)) }
@@ -125,9 +139,9 @@ export function SearchPage() {
     setSearchMessage(null)
   }
 
-  const changeIngestTab = (tab: 'youtube' | 'library' | 'file') => {
+  const changeIngestTab = (tab: 'youtube' | 'library' | 'file' | 'browse') => {
     setIngestTab(tab)
-    changeSearchScope(tab === 'library' ? 'library' : 'video')
+    if (tab !== 'browse') changeSearchScope(tab === 'library' ? 'library' : 'video')
   }
 
   const submitSearch = async (event: FormEvent) => {
@@ -138,6 +152,11 @@ export function SearchPage() {
     try { const result = await search(searchQuery, 10, searchScope === 'video' ? currentVideo?.id : undefined); setSearchResults(result.results); setSearchDuration({ client: Math.round(performance.now() - started), server: result.duration_ms }); if (result.results.length === 0) setSearchMessage('No indexed transcript matches found. Try a broader phrase.') } catch (cause) { setSearchMessage(errorText(cause)); setSearchResults([]); toast.error(errorText(cause)) } finally { setSearching(false) }
   }
 
+
+  const browseFilter = browseQuery.trim().toLowerCase()
+  const browseResults = browseFilter
+    ? videos.filter((video) => (video.title || '').toLowerCase().includes(browseFilter) || (video.channel || '').toLowerCase().includes(browseFilter))
+    : videos
 
   return <>
     <section className="hero-section">
@@ -151,9 +170,24 @@ export function SearchPage() {
           <button type="button" role="tab" aria-selected={ingestTab === 'youtube'} className={ingestTab === 'youtube' ? 'active' : ''} onClick={() => changeIngestTab('youtube')}><Video size={16} /> YouTube video</button>
           <button type="button" role="tab" aria-selected={ingestTab === 'library'} className={ingestTab === 'library' ? 'active' : ''} onClick={() => changeIngestTab('library')}><Library size={16} /> Search Library</button>
           <button type="button" role="tab" aria-selected={ingestTab === 'file'} className={ingestTab === 'file' ? 'active' : ''} onClick={() => changeIngestTab('file')}><Upload size={16} /> Transcript file</button>
+          <button type="button" role="tab" aria-selected={ingestTab === 'browse'} className={ingestTab === 'browse' ? 'active' : ''} onClick={() => changeIngestTab('browse')}><FileText size={16} /> Find video</button>
         </div>
         {ingestTab === 'library' && <div className="library-tab-pane"><Library size={22} /><div><h3>Search your library</h3><p>Search across every indexed video without fetching a new source.</p></div><Badge tone="muted">{videos.length} {videos.length === 1 ? 'video' : 'videos'} indexed</Badge></div>}
-        {ingestTab === 'youtube' ? <div className="ingest-pane"><div className="card-title-row"><div><h3>Fetch a video</h3><p>Paste a YouTube URL to load its title, thumbnail, duration, channel, and all compatible subtitles.</p></div><Badge tone="accent">Local extraction</Badge></div><form onSubmit={submitYouTube} className="stack-form"><div className="url-action-row"><Input required value={url} onChange={(event) => { setUrl(event.target.value); setYoutubePreview(null); setSubtitleOptions([]); setTranslatedSubtitleOptions([]); setSelectedSubtitle('') }} placeholder="youtube.com/watch?v=…" /><Button type="button" variant="secondary" onClick={() => void discoverSubtitles()} disabled={busy}>{busy ? <Loader2 className="spin" size={16} /> : <SearchIcon size={16} />} Fetch video</Button></div>{youtubePreview && <div className="youtube-preview"><img src={youtubePreview.thumbnail_url} alt="" /><div><strong>{youtubePreview.title || 'Untitled video'}</strong><span>{youtubePreview.channel || 'YouTube'}{youtubePreview.duration_ms ? ` · ${formatMs(youtubePreview.duration_ms)}` : ''}</span></div></div>}{youtubePreview && <><label className="field-label" htmlFor="subtitle-language">Subtitle language <span>English selected when available</span></label><select id="subtitle-language" className="ui-input ui-select" value={translatedSubtitleOptions.some((option) => `${option.source}:${option.language}` === selectedSubtitle) ? '' : selectedSubtitle} onChange={(event) => setSelectedSubtitle(event.target.value)}><option value="">English</option>{subtitleOptions.map((option) => <option key={`${option.source}:${option.language}`} value={`${option.source}:${option.language}`}>{option.language}{option.name ? ` — ${option.name}` : ''}</option>)}</select><Button disabled={busy}>{busy ? <><Loader2 className="spin" size={16} /> Indexing video</> : <>Upload & index <ArrowUpRight size={16} /></>}</Button></>}</form></div> : <div className="ingest-pane"><div className="card-title-row"><div><h3>Upload a transcript</h3><p>Bring your own VTT or SRT captions into the same indexing pipeline.</p></div><Badge tone="muted">.VTT · .SRT</Badge></div><form onSubmit={submitUpload} className="stack-form"><button type="button" className={`drop-zone ${file ? 'has-file' : ''}`} onClick={() => fileInput.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); setFile(event.dataTransfer.files.item(0)) }}><input ref={fileInput} type="file" accept=".vtt,.srt" hidden onChange={(event) => setFile(event.target.files?.[0] ?? null)} />{file ? <><Check size={20} /><strong>{file.name}</strong><span>Ready to upload</span></> : <><FileText size={22} /><strong>Drop a transcript here</strong><span>or browse from your computer</span></>}</button><Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Title (optional)" /><Input value={originalURL} onChange={(event) => setOriginalURL(event.target.value)} placeholder="Original YouTube URL (optional)" /><Button disabled={busy || !file}>{busy ? <><Loader2 className="spin" size={16} /> Indexing transcript</> : <>Upload & index <ArrowUpRight size={16} /></>}</Button></form></div>}
+        {ingestTab === 'youtube' ? <div className="ingest-pane"><div className="card-title-row"><div><h3>Fetch a video</h3><p>Paste a YouTube URL to load its title, thumbnail, duration, channel, and all compatible subtitles.</p></div><Badge tone="accent">Local extraction</Badge></div><form onSubmit={submitYouTube} className="stack-form"><div className="url-action-row"><Input required value={url} onChange={(event) => { setUrl(event.target.value); setYoutubePreview(null); setSubtitleOptions([]); setTranslatedSubtitleOptions([]); setSelectedSubtitle('') }} placeholder="youtube.com/watch?v=…" /><Button type="button" variant="secondary" onClick={() => void discoverSubtitles()} disabled={busy}>{busy ? <Loader2 className="spin" size={16} /> : <SearchIcon size={16} />} Fetch video</Button></div>{youtubePreview && <div className="youtube-preview"><img src={youtubePreview.thumbnail_url} alt="" /><div><strong>{youtubePreview.title || 'Untitled video'}</strong><span>{youtubePreview.channel || 'YouTube'}{youtubePreview.duration_ms ? ` · ${formatMs(youtubePreview.duration_ms)}` : ''}</span></div></div>}{youtubePreview && <><label className="field-label" htmlFor="subtitle-language">Subtitle language <span>English selected when available</span></label><select id="subtitle-language" className="ui-input ui-select" value={translatedSubtitleOptions.some((option) => `${option.source}:${option.language}` === selectedSubtitle) ? '' : selectedSubtitle} onChange={(event) => setSelectedSubtitle(event.target.value)}><option value="">English</option>{subtitleOptions.map((option) => <option key={`${option.source}:${option.language}`} value={`${option.source}:${option.language}`}>{option.language}{option.name ? ` — ${option.name}` : ''}</option>)}</select><Button disabled={busy}>{busy ? <><Loader2 className="spin" size={16} /> Indexing video</> : <>Upload & index <ArrowUpRight size={16} /></>}</Button></>}</form></div> : ingestTab === 'file' ? <div className="ingest-pane"><div className="card-title-row"><div><h3>Upload a transcript</h3><p>Bring your own VTT or SRT captions into the same indexing pipeline.</p></div><Badge tone="muted">.VTT · .SRT</Badge></div><form onSubmit={submitUpload} className="stack-form"><button type="button" className={`drop-zone ${file ? 'has-file' : ''}`} onClick={() => fileInput.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); setFile(event.dataTransfer.files.item(0)) }}><input ref={fileInput} type="file" accept=".vtt,.srt" hidden onChange={(event) => setFile(event.target.files?.[0] ?? null)} />{file ? <><Check size={20} /><strong>{file.name}</strong><span>Ready to upload</span></> : <><FileText size={22} /><strong>Drop a transcript here</strong><span>or browse from your computer</span></>}</button><Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Title (optional)" /><Input value={originalURL} onChange={(event) => setOriginalURL(event.target.value)} placeholder="Original YouTube URL (optional)" /><Button disabled={busy || !file}>{busy ? <><Loader2 className="spin" size={16} /> Indexing transcript</> : <>Upload & index <ArrowUpRight size={16} /></>}</Button></form></div> : null}
+        {ingestTab === 'browse' && <div className="browse-pane">
+          <div className="browse-search">
+            <SearchIcon size={16} />
+            <Input value={browseQuery} onChange={(event) => setBrowseQuery(event.target.value)} placeholder="Search your library by title…" aria-label="Search library by title" />
+            <Badge tone="muted">{browseResults.length} {browseResults.length === 1 ? 'match' : 'matches'}</Badge>
+          </div>
+          <div className="browse-results" aria-label="Matching videos">
+            {videos.length === 0 && <div className="browse-empty"><FolderOpen size={20} /><p>No videos in your library yet. Bring one in from the tabs above.</p></div>}
+            {videos.length > 0 && browseResults.length === 0 && <div className="browse-empty"><p>No videos match “{browseQuery.trim()}”.</p></div>}
+            {browseResults.map((video) => <button type="button" key={video.id} className={`browse-result ${browseSelected?.id === video.id ? 'selected' : ''}`} onClick={() => void openBrowseVideo(video)}><Thumbnail src={video.thumbnail_url} /><span className="browse-result-copy"><strong title={video.title}>{video.title || 'Untitled video'}</strong><small>{video.source_type === 'youtube' ? 'YouTube' : 'Transcript file'}{video.channel && ` · ${video.channel}`}{video.duration_ms && ` · ${formatMs(video.duration_ms)}`}</small></span><Badge tone={video.status === 'ready' ? 'success' : 'muted'}>{video.status}</Badge></button>)}
+          </div>
+          {browseSelected && <BrowseMetadata video={browseSelected} />}
+          {browseSelected && <BrowseTranscript video={browseSelected} cues={browseCues} loading={browseLoading} />}
+        </div>}
         {pipeline && (busy || pipeline.stage === 'failed') && <PipelineProgress pipeline={pipeline} />}
       </Card>
     </section>
@@ -214,24 +248,63 @@ function VideoCard({ video, open, cues, loading, onToggle, onDelete }: { video: 
   const hasTranscript = cues.length > 0
   const copyTranscript = async () => {
     try {
-      if (navigator.clipboard?.writeText) {
-        try { await navigator.clipboard.writeText(transcript) } catch { if (!copyTextFallback(transcript)) throw new Error('copy failed') }
-      } else if (!copyTextFallback(transcript)) {
-        throw new Error('copy failed')
-      }
-      toast.success(`Copied all ${cues.length} cues`)
+      if (await copyToClipboard(transcript)) toast.success(`Copied all ${cues.length} cues`)
+      else throw new Error('copy failed')
     } catch { toast.error('Clipboard access is unavailable. Try downloading the transcript instead.') }
   }
   const downloadTranscript = () => {
-    const blob = new Blob([transcript], { type: format === 'srt' ? 'application/x-subrip' : 'text/vtt' })
-    const href = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = href
-    anchor.download = `${safeFilename(video.title || 'transcript')}.${format}`
-    anchor.click()
-    URL.revokeObjectURL(href)
+    downloadTextFile(`${safeFilename(video.title || 'transcript')}.${format}`, transcript, format === 'srt' ? 'application/x-subrip' : 'text/vtt')
   }
   return <Card className="video-card"><div className="video-card-main"><div className="video-thumb"><Video size={20} /><span>{video.source_type === 'youtube' ? 'YT' : 'FILE'}</span></div><div className="video-info"><div className="video-heading"><h3 title={video.title}>{video.title || 'Untitled video'}</h3><Badge tone={video.status === 'ready' || video.status === 'succeeded' ? 'success' : 'muted'}>{video.status}</Badge></div><div className="video-meta"><span>{video.source_type === 'youtube' ? 'YouTube' : 'Uploaded transcript'}</span><span>{video.language || 'Language unknown'}</span><span>{video.transcript?.cue_count ?? 0} cues</span></div></div><div className="video-actions"><Button variant="secondary" size="sm" onClick={onToggle}>{open ? 'Hide transcript' : 'View transcript'}</Button><Button variant="ghost" size="icon" aria-label={`Delete ${video.title || 'video'}`} onClick={onDelete}><Trash2 size={16} /></Button></div></div>{open && <div className="transcript-viewer"><div className="transcript-header"><div><span>Transcript cues</span><Badge tone="muted">{loading ? <Loader2 className="spin" size={12} /> : `${cues.length} cues`}</Badge></div><div className="transcript-actions"><Button variant="ghost" size="sm" disabled={!hasTranscript} onClick={() => void copyTranscript()}><Copy size={14} /> Copy</Button><Button variant="ghost" size="sm" disabled={!hasTranscript} onClick={downloadTranscript}><Download size={14} /> Download .{format}</Button></div></div>{loading && <div className="transcript-loading"><Loader2 className="spin" size={16} /> Loading full transcript…</div>}{!loading && <>{cues.slice(0, renderLimit).map((cue) => <div className="cue-row" key={cue.id}><time>{formatMs(cue.start_ms)}</time><p>{cue.text}</p></div>)}{cues.length > renderLimit && <div className="transcript-more"><small>Showing {renderLimit} of {cues.length} cues</small><Button variant="secondary" size="sm" onClick={() => setRenderLimit((limit) => limit + RENDER_BATCH)}>Show more</Button></div>}</>}</div>}</Card>
+}
+
+function BrowseMetadata({ video }: { video: VideoRecord }) {
+  const items: Array<[string, string]> = [
+    ['Source', video.source_type === 'youtube' ? 'YouTube' : 'Transcript file'],
+    ['Channel', video.channel || '—'],
+    ['Duration', video.duration_ms ? formatMs(video.duration_ms) : '—'],
+    ['Language', video.language || '—'],
+    ['Cues', String(video.transcript?.cue_count ?? 0)],
+    ['Extraction', video.transcript?.extraction_method ?? '—'],
+    ['Indexed', new Date(video.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })],
+  ]
+  const link = video.original_url || (video.source_type === 'youtube' ? `https://www.youtube.com/watch?v=${video.source_ref}` : null)
+  return <section className="browse-metadata" aria-label="Video metadata">
+    <div className="browse-metadata-media">{video.thumbnail_url ? <img src={video.thumbnail_url} alt="" onError={(event) => { event.currentTarget.style.display = 'none' }} /> : <div className="thumbnail-fallback"><Video size={22} /><span>Video</span></div>}</div>
+    <div className="browse-metadata-body">
+      <div className="browse-metadata-title"><h3 title={video.title}>{video.title || 'Untitled video'}</h3><Badge tone={video.status === 'ready' || video.status === 'succeeded' ? 'success' : 'muted'}>{video.status}</Badge></div>
+      <dl className="browse-meta-grid">{items.map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={value}>{value}</dd></div>)}</dl>
+      {link && <a className="browse-original-link" href={link} target="_blank" rel="noreferrer">Open original <ArrowUpRight size={13} /></a>}
+    </div>
+  </section>
+}
+
+function BrowseTranscript({ video, cues, loading }: { video: VideoRecord; cues: Cue[]; loading: boolean }) {
+  const RENDER_BATCH = 400
+  const [renderLimit, setRenderLimit] = useState(RENDER_BATCH)
+  const format = video.transcript?.original_format === 'srt' ? 'srt' : 'vtt'
+  const transcript = formatTranscript(cues, format)
+  const hasTranscript = cues.length > 0
+  const copyTranscript = async () => {
+    try {
+      if (await copyToClipboard(transcript)) toast.success(`Copied all ${cues.length} cues`)
+      else throw new Error('copy failed')
+    } catch { toast.error('Clipboard access is unavailable. Try downloading the transcript instead.') }
+  }
+  const downloadTranscript = () => {
+    downloadTextFile(`${safeFilename(video.title || 'transcript')}.${format}`, transcript, format === 'srt' ? 'application/x-subrip' : 'text/vtt')
+  }
+  return <section className="browse-transcript" aria-label="Full transcript">
+    <div className="transcript-header">
+      <div><span>Full transcript · time-wise</span><Badge tone="muted">{loading ? <Loader2 className="spin" size={12} /> : `${cues.length} cues`}</Badge></div>
+      <div className="transcript-actions">
+        <Button variant="ghost" size="sm" disabled={!hasTranscript} onClick={() => void copyTranscript()}><Copy size={14} /> Copy</Button>
+        <Button variant="ghost" size="sm" disabled={!hasTranscript} onClick={downloadTranscript}><Download size={14} /> Download .{format}</Button>
+      </div>
+    </div>
+    {loading && <div className="transcript-loading"><Loader2 className="spin" size={16} /> Loading full transcript…</div>}
+    {!loading && <div className="browse-cue-list">{cues.slice(0, renderLimit).map((cue) => <div className="cue-row" key={cue.id}><time>{formatMs(cue.start_ms)}</time><p>{cue.text}</p></div>)}{cues.length > renderLimit && <div className="transcript-more"><small>Showing {renderLimit} of {cues.length} cues</small><Button variant="secondary" size="sm" onClick={() => setRenderLimit((limit) => limit + RENDER_BATCH)}>Show more</Button></div>}</div>}
+  </section>
 }
 
 function PipelineProgress({ pipeline }: { pipeline: { progress: number; stage: string; state: ProcessingState | null } }) {
@@ -364,4 +437,21 @@ function copyTextFallback(text: string) {
   try { copied = document.execCommand('copy') } finally { textarea.remove() }
   return copied
 }
+async function copyToClipboard(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try { await navigator.clipboard.writeText(text); return true } catch { return copyTextFallback(text) }
+  }
+  return copyTextFallback(text)
+}
+
+function downloadTextFile(filename: string, content: string, mime: string) {
+  const blob = new Blob([content], { type: mime })
+  const href = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = href
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(href)
+}
+
 function errorText(cause: unknown) { return cause instanceof ApiError ? cause.message : 'Something went wrong. Please try again.' }
