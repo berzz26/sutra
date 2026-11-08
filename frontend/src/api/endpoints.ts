@@ -25,7 +25,25 @@ export interface SearchResult {
 }
 export interface SearchResponse { query: string; limit: number; offset: number; duration_ms: number; results: SearchResult[] }
 
-export function listVideos(): Promise<{ videos: Video[] }> { return apiClient.get('/api/v1/videos') }
+export function listVideos(limit = 200, offset = 0): Promise<{ videos: Video[] }> {
+  return apiClient.get(`/api/v1/videos?limit=${limit}&offset=${offset}`)
+}
+
+// The video list endpoint is paginated; load every page so title search
+// covers the whole library, not just the first page.
+export const VIDEO_PAGE_SIZE = 200
+
+export async function fetchAllVideos(): Promise<Video[]> {
+  const all: Video[] = []
+  let offset = 0
+  for (;;) {
+    const page = await listVideos(VIDEO_PAGE_SIZE, offset)
+    all.push(...page.videos)
+    if (page.videos.length < VIDEO_PAGE_SIZE) break
+    offset += page.videos.length
+  }
+  return all
+}
 export function listSubtitles(url: string): Promise<SubtitleDiscovery> { return apiClient.get(`/api/v1/videos/subtitles?url=${encodeURIComponent(url)}`) }
 export function ingestYouTube(url: string, language: string, subtitle?: SubtitleOption): Promise<Video> {
   return apiClient.post('/api/v1/videos', {

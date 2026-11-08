@@ -6,6 +6,47 @@ current architecture and operator documentation live in the other files in this
 directory. Append a new entry after a significant implementation or phase.
 See `docs/rules.md`.
 
+## Fix — Library-wide title search + browse tab layout (2026-11-08)
+
+**Problem**
+
+- The video library list loaded only the first page of
+  `GET /api/v1/videos` (default `limit=50`), so title search in the Find
+  video tab could never match older videos (library had 137 at the time).
+- The Find video tab rendered fixed-size thumbnail fallback boxes that
+  looked broken, and its metadata/transcript sections sat above the
+  "Your collection" section.
+
+**Implemented**
+
+- `frontend/src/api/endpoints.ts`: `listVideos(limit, offset)` takes query
+  paging; new `fetchAllVideos()` loops pages (200/request) so the app
+  always holds the entire library.
+- `frontend/src/pages/SearchPage.tsx`:
+  - `refresh()` uses `fetchAllVideos()` — title search (+ the semantic
+    search result-card thumbnails lookup) now covers every video.
+  - Find video tab keeps only the search + results; thumbnails removed
+    from result rows and metadata panel.
+  - Selected video's metadata panel and full transcript (time-wise, with
+    Copy / Download .srt/.vtt) now render in a `browse-detail` section
+    below the "Your collection" library list, auto-scrolled into view,
+    only while the tab is open; selection cleared when the video is
+    deleted.
+- `frontend/src/styles.css`: removed dead thumbnail rules; single-column
+  metadata panel; `browse-detail` styling with scroll margin.
+
+**Tested**
+
+- `npm run build` (tsc strict + vite) — clean.
+- Live pagination check: 137/137 videos fetched across pages via
+  `?limit=200&offset=`; oldest video's transcript pages return the full
+  cue set.
+
+**Known limitations**
+
+- Library list is held fully in memory client-side; fine for hundreds of
+  videos, server-side search parameter would be needed for thousands.
+
 ## Feature — Library browser tab (2026-11-08)
 
 **Implemented**

@@ -2,7 +2,7 @@ import { FormEvent, type CSSProperties, useEffect, useRef, useState } from 'reac
 import { ArrowUpRight, Check, Clock3, Copy, Download, FileText, FolderOpen, Library, Loader2, Search as SearchIcon, Trash2, Upload, Video, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApiError } from '../api/client'
-import { Cue, deleteVideo, getProcessing, getTranscript, ingestYouTube, listSubtitles, listVideos, ProcessingState, SearchResult, search, SubtitleOption, uploadTranscript, Video as VideoRecord, YouTubeMetadata } from '../api/endpoints'
+import { Cue, deleteVideo, fetchAllVideos, getProcessing, getTranscript, ingestYouTube, listSubtitles, ProcessingState, SearchResult, search, SubtitleOption, uploadTranscript, Video as VideoRecord, YouTubeMetadata } from '../api/endpoints'
 import { AlertDialog, Badge, Button, Card, Input, Skeleton } from '../components/ui'
 import { ProgressiveFluxLoader } from '../components/ProgressiveFluxLoader'
 
@@ -40,7 +40,7 @@ export function SearchPage() {
 
   const refresh = async () => {
     setLoadingVideos(true)
-    try { setVideos((await listVideos()).videos) } catch (cause) { toast.error(errorText(cause)) } finally { setLoadingVideos(false) }
+    try { setVideos(await fetchAllVideos()) } catch (cause) { toast.error(errorText(cause)) } finally { setLoadingVideos(false) }
   }
 
   useEffect(() => { void refresh(); if (window.location.hash === '#library') setTimeout(() => document.getElementById('library')?.scrollIntoView(), 0) }, [])
@@ -118,18 +118,22 @@ export function SearchPage() {
   }
 
   // Library browser tab: pick a video by title, then inspect its full
-  // transcript with its metadata.
+  // transcript with its metadata (rendered below the library section).
   const openBrowseVideo = async (video: VideoRecord) => {
-    if (browseSelected?.id === video.id && browseCues.length >= (video.transcript?.cue_count ?? 0)) return
+    const alreadyLoaded = browseSelected?.id === video.id && browseCues.length >= (video.transcript?.cue_count ?? 0)
+    if (alreadyLoaded) { document.getElementById('browse-detail')?.scrollIntoView({ behavior: 'smooth' }); return }
     setBrowseSelected(video)
     setBrowseLoading(true)
     setBrowseCues([])
-    try { setBrowseCues(await fetchAllCues(video)) } catch (cause) { toast.error(errorText(cause)) } finally { setBrowseLoading(false) }
+    try {
+      setBrowseCues(await fetchAllCues(video))
+      setTimeout(() => document.getElementById('browse-detail')?.scrollIntoView({ behavior: 'smooth' }), 0)
+    } catch (cause) { toast.error(errorText(cause)) } finally { setBrowseLoading(false) }
   }
 
   const confirmDelete = async () => {
     if (!deleteTarget) return
-    try { await deleteVideo(deleteTarget.id); setDeleteTarget(null); if (open === deleteTarget.id) setOpen(null); if (currentVideo?.id === deleteTarget.id) { setCurrentVideo(null); setSearchResults([]); setSearchDuration(null); setSearchMessage(null) } toast.success('Video removed from your library'); await refresh() } catch (cause) { toast.error(errorText(cause)) }
+    try { await deleteVideo(deleteTarget.id); setDeleteTarget(null); if (open === deleteTarget.id) { setOpen(null); setCues([]) } if (browseSelected?.id === deleteTarget.id) { setBrowseSelected(null); setBrowseCues([]) } if (currentVideo?.id === deleteTarget.id) { setCurrentVideo(null); setSearchResults([]); setSearchDuration(null); setSearchMessage(null) } toast.success('Video removed from your library'); await refresh() } catch (cause) { toast.error(errorText(cause)) }
   }
 
   const changeSearchScope = (scope: 'video' | 'library') => {
@@ -183,10 +187,8 @@ export function SearchPage() {
           <div className="browse-results" aria-label="Matching videos">
             {videos.length === 0 && <div className="browse-empty"><FolderOpen size={20} /><p>No videos in your library yet. Bring one in from the tabs above.</p></div>}
             {videos.length > 0 && browseResults.length === 0 && <div className="browse-empty"><p>No videos match “{browseQuery.trim()}”.</p></div>}
-            {browseResults.map((video) => <button type="button" key={video.id} className={`browse-result ${browseSelected?.id === video.id ? 'selected' : ''}`} onClick={() => void openBrowseVideo(video)}><Thumbnail src={video.thumbnail_url} /><span className="browse-result-copy"><strong title={video.title}>{video.title || 'Untitled video'}</strong><small>{video.source_type === 'youtube' ? 'YouTube' : 'Transcript file'}{video.channel && ` · ${video.channel}`}{video.duration_ms && ` · ${formatMs(video.duration_ms)}`}</small></span><Badge tone={video.status === 'ready' ? 'success' : 'muted'}>{video.status}</Badge></button>)}
+            {browseResults.map((video) => <button type="button" key={video.id} className={`browse-result ${browseSelected?.id === video.id ? 'selected' : ''}`} onClick={() => void openBrowseVideo(video)}><span className="browse-result-copy"><strong title={video.title}>{video.title || 'Untitled video'}</strong><small>{video.source_type === 'youtube' ? 'YouTube' : 'Transcript file'}{video.channel && ` · ${video.channel}`}{video.duration_ms && ` · ${formatMs(video.duration_ms)}`}</small></span><Badge tone={video.status === 'ready' ? 'success' : 'muted'}>{video.status}</Badge></button>)}
           </div>
-          {browseSelected && <BrowseMetadata video={browseSelected} />}
-          {browseSelected && <BrowseTranscript video={browseSelected} cues={browseCues} loading={browseLoading} />}
         </div>}
         {pipeline && (busy || pipeline.stage === 'failed') && <PipelineProgress pipeline={pipeline} />}
       </Card>
@@ -222,6 +224,7 @@ export function SearchPage() {
     </div>}
 
     <section className="library-section" id="library" aria-labelledby="library-heading"><div className="section-heading"><div><p className="eyebrow">Your collection</p><h2 id="library-heading">Video library</h2></div>{videos.length > 0 && <Badge tone="muted">{videos.length} {videos.length === 1 ? 'source' : 'sources'}</Badge>}</div>{loadingVideos ? <div className="library-list"><Skeleton className="library-skeleton" /><Skeleton className="library-skeleton" /></div> : videos.length === 0 ? <div className="empty-library"><FolderOpen size={22} /><h3>Your library is quiet</h3><p>Add a YouTube video or transcript above to start searching.</p></div> : <div className="library-list">{videos.map((video) => <VideoCard key={video.id} video={video} open={open === video.id} cues={cues} loading={transcriptLoading} onToggle={() => void showTranscript(video)} onDelete={() => setDeleteTarget(video)} />)}</div>}</section>
+    {ingestTab === 'browse' && browseSelected && <section className="browse-detail" id="browse-detail" aria-label="Selected video detail"><BrowseMetadata video={browseSelected} /><BrowseTranscript video={browseSelected} cues={browseCues} loading={browseLoading} /></section>}
     <AlertDialog open={deleteTarget !== null} title="Remove this video?" description="This deletes the video, transcript cues, and indexed moments. This cannot be undone." confirmLabel="Delete video" onCancel={() => setDeleteTarget(null)} onConfirm={() => void confirmDelete()} />
   </>
 }
@@ -270,7 +273,6 @@ function BrowseMetadata({ video }: { video: VideoRecord }) {
   ]
   const link = video.original_url || (video.source_type === 'youtube' ? `https://www.youtube.com/watch?v=${video.source_ref}` : null)
   return <section className="browse-metadata" aria-label="Video metadata">
-    <div className="browse-metadata-media">{video.thumbnail_url ? <img src={video.thumbnail_url} alt="" onError={(event) => { event.currentTarget.style.display = 'none' }} /> : <div className="thumbnail-fallback"><Video size={22} /><span>Video</span></div>}</div>
     <div className="browse-metadata-body">
       <div className="browse-metadata-title"><h3 title={video.title}>{video.title || 'Untitled video'}</h3><Badge tone={video.status === 'ready' || video.status === 'succeeded' ? 'success' : 'muted'}>{video.status}</Badge></div>
       <dl className="browse-meta-grid">{items.map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={value}>{value}</dd></div>)}</dl>
