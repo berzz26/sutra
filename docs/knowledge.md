@@ -6,6 +6,38 @@ current architecture and operator documentation live in the other files in this
 directory. Append a new entry after a significant implementation or phase.
 See `docs/rules.md`.
 
+## Feature — Library browser tab (2026-11-08)
+
+**Implemented**
+
+- New "Find video" tab in the ingest card (`frontend/src/pages/SearchPage.tsx`):
+  - Title search over the indexed library (case-insensitive; channel text
+    also matches), results list with thumbnails, duration and status badges.
+  - Selecting a video renders two sections inline: a metadata panel
+    (source, channel, duration, language, cue count, extraction method,
+    indexed date, link to the original) and the complete transcript
+    rendered time-wise (`time + cue text` rows) with Copy and
+    Download .srt/.vtt buttons — sharing the same full-paged
+    `fetchAllCues` loading and progressive "Show more" rendering as the
+    library cards, while copy/download always encode the entire
+    transcript.
+- Shared `copyToClipboard` / `downloadTextFile` helpers extracted and
+  reused by both the library cards and the browser tab.
+
+**Tested**
+
+- `npm run build` (tsc strict + vite) — clean.
+- Live backend smoke: `/api/v1/videos` returns the full metadata surface
+  the tab renders (title, channel, duration_ms, language, status,
+  transcript cue_count/original_format).
+
+**Known limitations**
+
+- Title search is client-side over the (paginated) library list; a
+  very large library would want a server-side search parameter later.
+- Transcript excerpt rendering stays capped at 400 rows per batch; Copy/
+  Download are unaffected.
+
 ## Fix — Full transcript copy/download (2026-11-08)
 
 **Problem**
