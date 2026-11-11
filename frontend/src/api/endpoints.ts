@@ -25,7 +25,10 @@ export interface SearchResult {
 }
 export interface SearchResponse { query: string; limit: number; offset: number; duration_ms: number; results: SearchResult[] }
 
-export function listVideos(): Promise<{ videos: Video[] }> { return apiClient.get('/api/v1/videos') }
+export function getVideo(id: string): Promise<Video> {
+  return apiClient.get(`/api/v1/videos/${id}`)
+}
+
 export function listSubtitles(url: string): Promise<SubtitleDiscovery> { return apiClient.get(`/api/v1/videos/subtitles?url=${encodeURIComponent(url)}`) }
 export function ingestYouTube(url: string, language: string, subtitle?: SubtitleOption): Promise<Video> {
   return apiClient.post('/api/v1/videos', {
@@ -36,9 +39,23 @@ export function ingestYouTube(url: string, language: string, subtitle?: Subtitle
   })
 }
 export function uploadTranscript(data: FormData): Promise<Video> { return apiClient.postForm('/api/v1/transcripts', data) }
-export function getTranscript(id: string): Promise<{ cues: Cue[] }> { return apiClient.get(`/api/v1/videos/${id}/transcript`) }
+export function getTranscript(id: string, limit?: number, offset?: number): Promise<{ cues: Cue[] }> {
+  const params = new URLSearchParams()
+  if (limit !== undefined) params.set('limit', String(limit))
+  if (offset !== undefined) params.set('offset', String(offset))
+  const query = params.toString()
+  return apiClient.get(`/api/v1/videos/${id}/transcript${query ? `?${query}` : ''}`)
+}
 export function getProcessing(id: string): Promise<ProcessingState> { return apiClient.get(`/api/v1/videos/${id}/processing`) }
 export function deleteVideo(id: string): Promise<void> { return apiClient.delete(`/api/v1/videos/${id}`) }
-export function search(query: string, limit = 10, videoId?: string): Promise<SearchResponse> {
-  return apiClient.post('/api/v1/search', { query, limit, video_id: videoId || undefined })
+export function search(query: string, limit = 10, videoId?: string, videoIds?: string[]): Promise<SearchResponse> {
+  return apiClient.post('/api/v1/search', {
+    query,
+    limit,
+    video_id: videoId || undefined,
+    // An explicit ID list scopes the search to the browser-local library.
+    // The backend treats an empty list as a real empty scope (zero results),
+    // never as an unrestricted search.
+    video_ids: videoIds,
+  })
 }

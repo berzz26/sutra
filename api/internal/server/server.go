@@ -27,7 +27,7 @@ type Server struct {
 	addr string
 }
 
-func New(addr string, pool *pgxpool.Pool, service *ingestion.Service, processor *processing.Service, retriever *retrieval.Service, maxUploadBytes int64) *Server {
+func New(addr string, pool *pgxpool.Pool, service *ingestion.Service, processor *processing.Service, retriever *retrieval.Service, maxUploadBytes int64, adminToken string) *Server {
 	app := fiber.New(fiber.Config{
 		AppName:      "sutra",
 		BodyLimit:    int(maxUploadBytes) + 1024*1024,
@@ -37,7 +37,7 @@ func New(addr string, pool *pgxpool.Pool, service *ingestion.Service, processor 
 	app.Use(recover.New())
 	app.Use(requestid.New())
 
-	api.New(pool, service, processor, retriever).Register(app)
+	api.New(pool, service, processor, retriever, adminToken).Register(app)
 
 	return &Server{app: app, addr: addr}
 }

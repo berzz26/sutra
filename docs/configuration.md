@@ -59,6 +59,7 @@ The database container has no host port in the default stack. Use
 | `SERVER_PORT` | `8080` | Listen port inside the container. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. |
 | `SHUTDOWN_TIMEOUT_SECONDS` | `15` | Graceful shutdown budget for HTTP and workers. |
+| `ADMIN_API_TOKEN` | empty | Static bearer token for the administrative endpoints: `GET /api/v1/videos` (global video listing) and `DELETE /api/v1/videos/:id` (video deletion). Sent as `Authorization: Bearer <token>` or the `X-Admin-Token` header. When unset, those endpoints reject every request (fail closed). The value is never logged and never sent to the frontend; generate one with e.g. `openssl rand -hex 32`. |
 
 ## Ingestion
 
@@ -200,3 +201,24 @@ docker compose logs api
 - Containers run with `no-new-privileges`; the API runs as UID 10001.
 - The default credentials are for local development only.
 - There is no application authentication or TLS. Use a reverse proxy.
+
+### Browser-local video libraries
+
+The UI keeps each browser's video references in `localStorage`
+(`sutra.videoLibrary.v1`). The shared database still holds every indexed
+video, but the normal frontend only lists and searches the videos saved in
+the current browser:
+
+- The global listing endpoint (`GET /api/v1/videos`) and video deletion
+  (`DELETE /api/v1/videos/:id`) require `ADMIN_API_TOKEN`.
+- Entire Library searches always carry an explicit `video_ids` list; an
+  empty list is a real empty scope and returns zero results — it is never
+  treated as "search everything".
+- Removing a video in the UI only deletes the local reference; the indexed
+  database content and other browsers are unaffected. Clearing browser
+  storage likewise removes local references without deleting any indexed
+  content.
+
+This is browser-level organization, not user authentication or strict
+multi-user data isolation: any browser that knows a video's ID can still
+reference it.

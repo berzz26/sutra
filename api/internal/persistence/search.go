@@ -19,16 +19,17 @@ type SearchCandidate struct {
 	Score       float64
 }
 
-func SearchVector(ctx context.Context, pool *pgxpool.Pool, vector []float32, videoID string, limit int) ([]SearchCandidate, error) {
+// SearchVector returns the nearest chunk candidates for a query embedding.
+// videoIDs restricts retrieval to those videos; an empty slice means
+// unrestricted retrieval (internal tooling only — API handlers that receive
+// no scope from the caller must decide that explicitly, see api.search).
+func SearchVector(ctx context.Context, pool *pgxpool.Pool, vector []float32, videoIDs []string, limit int) ([]SearchCandidate, error) {
 	if err := validateSearchVector(vector); err != nil {
 		return nil, err
 	}
 	where := "c.embedding IS NOT NULL"
 	args := []any{vectorLiteral(vector)}
-	if videoID != "" {
-		args = append(args, videoID)
-		where += fmt.Sprintf(" AND c.video_id = $%d", len(args))
-	}
+	where, args = appendVideoScope(where, args, videoIDs)
 	args = append(args, limit)
 	query := `SELECT c.id, c.video_id, v.title, v.original_url, c.text, c.start_ms, c.end_ms,
 				  c.embedding <=> $1::vector AS distance
@@ -40,13 +41,10 @@ func SearchVector(ctx context.Context, pool *pgxpool.Pool, vector []float32, vid
 	return scanSearchCandidates(ctx, pool, query, args...)
 }
 
-func SearchLexical(ctx context.Context, pool *pgxpool.Pool, queryText, videoID string, limit int) ([]SearchCandidate, error) {
+func SearchLexical(ctx context.Context, pool *pgxpool.Pool, queryText string, videoIDs []string, limit int) ([]SearchCandidate, error) {
 	where := "c.search_vector @@ websearch_to_tsquery('english', $1)"
 	args := []any{queryText}
-	if videoID != "" {
-		args = append(args, videoID)
-		where += fmt.Sprintf(" AND c.video_id = $%d", len(args))
-	}
+	where, args = appendVideoScope(where, args, videoIDs)
 	args = append(args, limit)
 	query := `SELECT c.id, c.video_id, v.title, v.original_url, c.text, c.start_ms, c.end_ms,
 				  ts_rank_cd(c.search_vector, websearch_to_tsquery('english', $1)) AS rank
@@ -56,6 +54,17 @@ func SearchLexical(ctx context.Context, pool *pgxpool.Pool, queryText, videoID s
 			  ORDER BY rank DESC, c.id
 			  LIMIT $%d`, len(args))
 	return scanSearchCandidates(ctx, pool, query, args...)
+}
+
+// appendVideoScope adds `AND c.video_id = ANY($n::uuid[])` when a scope is
+// present, so the filter applies to candidate retrieval before fusion. The
+// IDs must already be validated UUIDs.
+func appendVideoScope(where string, args []any, videoIDs []string) (string, []any) {
+	if len(videoIDs) == 0 {
+		return where, args
+	}
+	args = append(args, videoIDs)
+	return where + fmt.Sprintf(" AND c.video_id = ANY($%d::uuid[])", len(args)), args
 }
 
 func scanSearchCandidates(ctx context.Context, pool *pgxpool.Pool, query string, args ...any) ([]SearchCandidate, error) {

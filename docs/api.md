@@ -77,7 +77,8 @@ Request:
   "query": "database replication",
   "limit": 10,
   "offset": 0,
-  "video_id": "optional-uuid"
+  "video_id": "optional-uuid",
+  "video_ids": ["optional-uuid", "optional-uuid"]
 }
 ```
 
@@ -86,7 +87,16 @@ Request:
 | `query` | string | Required, non-empty, max 2,000 characters. |
 | `limit` | integer | Optional, default 10, range 1–50. |
 | `offset` | integer | Optional, default 0, must be ≥ 0. |
-| `video_id` | string | Optional existing video UUID. |
+| `video_id` | string | Optional existing video UUID. Restricts the search to one video. |
+| `video_ids` | string[] | Optional list of video UUIDs (max 500). Restricts the search to those videos; duplicates are ignored. **An empty list is a real empty scope: it returns zero results immediately and is never treated as an unrestricted search.** |
+
+The scope is resolved in this order: `video_id` first, then `video_ids`,
+then unrestricted retrieval. The unrestricted fallback exists for backward
+compatibility with existing API clients and internal tooling; the browser
+frontend always sends an explicit scope. The `video_ids` filter applies to
+both the semantic and the lexical candidate retrieval before result fusion.
+Unavailable (deleted) video IDs in the list simply contribute no rows
+instead of failing the request.
 
 Response 200:
 
@@ -250,12 +260,27 @@ failure.
 
 ## Videos
 
-### `GET /api/v1/videos?limit=50&offset=0`
+### `GET /api/v1/videos?limit=50&offset=0` (administrative)
 
-Lists the newest videos first. Pagination applies to videos.
+Lists the newest videos in the shared database. This endpoint is protected
+by the static `ADMIN_API_TOKEN` (see [Configuration](configuration.md)):
+present it as `Authorization: Bearer <token>` or in the `X-Admin-Token`
+header. Missing or incorrect tokens are rejected with **401**, and the
+endpoint rejects every request when no token is configured.
+
+The normal frontend does not use this endpoint; it renders each browser's
+locally saved library instead (see "Browser-local video libraries" in the
+configuration documentation).
+
+Pagination applies to videos.
 
 - `limit`: default 50, range 1–200.
 - `offset`: default 0, must be ≥ 0.
+
+```sh
+curl -H "Authorization: Bearer $ADMIN_API_TOKEN" \
+  http://localhost:3000/api/v1/videos?limit=50
+```
 
 Response 200:
 
@@ -290,11 +315,16 @@ Response 200:
 
 Returns one video with its transcript summary, or 404 `VIDEO_NOT_FOUND`.
 
-### `DELETE /api/v1/videos/:id`
+### `DELETE /api/v1/videos/:id` (administrative)
 
 Deletes the video and, by cascade, its transcript, cues, chunks, processing
-state, and jobs. If artifact storage is enabled, stored artifacts are also
-removed. Returns **204** with no body.
+state, and jobs. Requires `ADMIN_API_TOKEN` (see `GET /api/v1/videos`);
+requests without a valid token are rejected with **401**. If artifact
+storage is enabled, stored artifacts are also removed.
+
+Note: the UI's "remove from library" action does **not** call this endpoint.
+It only removes the video's ID from the current browser's local library and
+leaves the database record untouched.
 
 Note: artifact deletion happens after the database delete. If artifact cleanup
 fails, the API logs the failure and returns a 500 error, but the database rows

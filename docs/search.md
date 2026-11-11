@@ -28,7 +28,8 @@ Request body:
   "query": "How does database replication work?",
   "limit": 10,
   "offset": 0,
-  "video_id": "optional-video-uuid"
+  "video_id": "optional-video-uuid",
+  "video_ids": ["optional-video-uuid", "optional-video-uuid"]
 }
 ```
 
@@ -38,9 +39,11 @@ Request body:
 | `limit` | No | Defaults to 10. Must be 1–50. |
 | `offset` | No | Defaults to 0. Must be zero or greater. |
 | `video_id` | No | Must be an existing video UUID; restricts results to that video. |
+| `video_ids` | No | Up to 500 video UUIDs; restricts results to those videos (duplicates ignored). An **empty list is an empty scope: it returns zero results and is never treated as an unrestricted search**. The filter applies to both candidate retrievals before fusion. |
 
-An unknown `video_id` returns HTTP 404. A malformed UUID or invalid limit/offset
-returns HTTP 400 with code `INVALID_SEARCH`.
+An unknown `video_id` returns HTTP 404; unknown IDs inside `video_ids` simply
+contribute no rows. A malformed UUID or invalid limit/offset returns HTTP 400
+with code `INVALID_SEARCH`.
 
 ## Response
 

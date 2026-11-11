@@ -6,6 +6,161 @@ current architecture and operator documentation live in the other files in this
 directory. Append a new entry after a significant implementation or phase.
 See `docs/rules.md`.
 
+## Fix — Find-video tab: fast typing, in-place card, no library list (2026-11-08)
+
+**Problem**
+
+- Every keystroke in the Find-video search re-rendered the whole page:
+  the 137-row VideoCard library list and any open transcript (hundreds of
+  cue rows) re-mounted on each character, making typing feel seconds slow.
+- Selecting a result auto-scrolled the page down to a detail section
+  below the library; user wants results and detail where they typed.
+- Selected-video card lacked a thumbnail; the video library list should
+  not appear on that tab at all.
+
+**Implemented**
+
+- `frontend/src/pages/SearchPage.tsx`:
+  - Filtering uses `useDeferredValue` + `useMemo` on the query, so typing
+    renders instantly against the previous result list.
+  - `BrowseMetadata` / `BrowseTranscript` wrapped in `memo` — cue lists
+    and metadata panels no longer re-render while typing. Transcript
+    render limit resets when switching videos.
+  - Detail card (thumbnail + metadata grid + time-wise transcript, with
+    Copy / Download .srt/.vtt) renders directly under the results inside
+    the same browse pane; all `scrollIntoView` calls removed.
+  - Video library list section (`Your collection`) is hidden while the
+    Find-video tab is active — the page shows only search + results.
+  - Result rows show a plain 64×36 image thumbnail (nothing rendered
+    when there is no image, instead of the odd fallback box); the
+    selected card keeps the full `Thumbnail` fallback in its media
+    column.
+- `frontend/src/styles.css`: reworked `.browse-*` block — framed and
+  accent-focused search bar, `selected` result state, thumbnail media
+  column with accent-bordered metadata card (accent left edge + accent
+  gradient), transcript as a soft panel with bordered header strip and
+  per-row dividers. Dead `.browse-detail` rules removed.
+
+**Tested**
+
+- `npm run build` (tsc strict + vite) — clean.
+
+**Known limitations**
+
+- Search still matches only title/channel text; semantic or server-side
+  search over the whole library remains future work.
+
+## Fix — Library-wide title search + browse tab layout (2026-11-08)
+
+**Problem**
+
+- The video library list loaded only the first page of
+  `GET /api/v1/videos` (default `limit=50`), so title search in the Find
+  video tab could never match older videos (library had 137 at the time).
+- The Find video tab rendered fixed-size thumbnail fallback boxes that
+  looked broken, and its metadata/transcript sections sat above the
+  "Your collection" section.
+
+**Implemented**
+
+- `frontend/src/api/endpoints.ts`: `listVideos(limit, offset)` takes query
+  paging; new `fetchAllVideos()` loops pages (200/request) so the app
+  always holds the entire library.
+- `frontend/src/pages/SearchPage.tsx`:
+  - `refresh()` uses `fetchAllVideos()` — title search (+ the semantic
+    search result-card thumbnails lookup) now covers every video.
+  - Find video tab keeps only the search + results; thumbnails removed
+    from result rows and metadata panel.
+  - Selected video's metadata panel and full transcript (time-wise, with
+    Copy / Download .srt/.vtt) now render in a `browse-detail` section
+    below the "Your collection" library list, auto-scrolled into view,
+    only while the tab is open; selection cleared when the video is
+    deleted.
+- `frontend/src/styles.css`: removed dead thumbnail rules; single-column
+  metadata panel; `browse-detail` styling with scroll margin.
+
+**Tested**
+
+- `npm run build` (tsc strict + vite) — clean.
+- Live pagination check: 137/137 videos fetched across pages via
+  `?limit=200&offset=`; oldest video's transcript pages return the full
+  cue set.
+
+**Known limitations**
+
+- Library list is held fully in memory client-side; fine for hundreds of
+  videos, server-side search parameter would be needed for thousands.
+
+## Feature — Library browser tab (2026-11-08)
+
+**Implemented**
+
+- New "Find video" tab in the ingest card (`frontend/src/pages/SearchPage.tsx`):
+  - Title search over the indexed library (case-insensitive; channel text
+    also matches), results list with thumbnails, duration and status badges.
+  - Selecting a video renders two sections inline: a metadata panel
+    (source, channel, duration, language, cue count, extraction method,
+    indexed date, link to the original) and the complete transcript
+    rendered time-wise (`time + cue text` rows) with Copy and
+    Download .srt/.vtt buttons — sharing the same full-paged
+    `fetchAllCues` loading and progressive "Show more" rendering as the
+    library cards, while copy/download always encode the entire
+    transcript.
+- Shared `copyToClipboard` / `downloadTextFile` helpers extracted and
+  reused by both the library cards and the browser tab.
+
+**Tested**
+
+- `npm run build` (tsc strict + vite) — clean.
+- Live backend smoke: `/api/v1/videos` returns the full metadata surface
+  the tab renders (title, channel, duration_ms, language, status,
+  transcript cue_count/original_format).
+
+**Known limitations**
+
+- Title search is client-side over the (paginated) library list; a
+  very large library would want a server-side search parameter later.
+- Transcript excerpt rendering stays capped at 400 rows per batch; Copy/
+  Download are unaffected.
+
+## Fix — Full transcript copy/download (2026-11-08)
+
+**Problem**
+
+- Copy and "Download .srt/.vtt" on a video card produced only the first
+  1–2 minutes of the conversation. The transcript endpoint is paginated
+  (`limit` default 50, `page()` in `api/internal/api/ingestion.go`), and the
+  frontend called `GET /api/v1/videos/:id/transcript` without parameters, so
+  only the first page's cues were ever loaded — the database was fine
+  (verified: cue counts up to 14,774 fully stored).
+
+**Implemented**
+
+- `frontend/src/api/endpoints.ts`: `getTranscript` now accepts `limit` /
+  `offset` and builds the query string.
+- `frontend/src/pages/SearchPage.tsx`:
+  - `fetchAllCues` pages through the transcript endpoint (200 per page)
+    until a short page or the transcript's declared `cue_count` is reached.
+  - `showTranscript` loads the full transcript with a visible loading state
+    before enabling Copy/Download.
+  - The viewer renders cues progressively (400 at a time, "Show more") so a
+    15k-cue transcript does not freeze the DOM; Copy/Download always encode
+    the complete set.
+- `frontend/src/styles.css`: styles for the loading row and "show more"
+  footer.
+
+**Tested**
+
+- `npm run build` (tsc strict + vite) — clean.
+- Live backend pagination check: tail page `?limit=200&offset=14600`
+  returns 174 cues starting at seq 14601; a full loop over the WAN Show
+  April 3, 2026 video fetched **14,774/14,774 cues across 74 pages**.
+
+**Known limitations**
+
+- Copying a full 15k-cue transcript puts a ~1 MB string on the clipboard;
+  browsers accept it but some autofocus contexts can be slow.
+
 ## Phase 3 — Search timing metadata (2026-11-02)
 
 **Implemented**
