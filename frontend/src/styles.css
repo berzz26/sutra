@@ -1495,6 +1495,9 @@ a { color: inherit; }
     display: flex;
     align-items: center;
     gap: 2px;
+    /* Scale animations originate at the left edge so switching text never
+       spills past the container's left side. */
+    transform-origin: 0 50%;
 }
 
 .flux-track {

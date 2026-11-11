@@ -1,7 +1,7 @@
 import { useRef, type FormEvent } from 'react'
 import {
   Check, FileText, Folder, Link2, Search as SearchIcon, Sparkles,
-  SlidersHorizontal, SquarePlay, ScanSearch, Upload, Video as VideoIcon,
+  SquarePlay, ScanSearch, Upload, Video as VideoIcon,
 } from 'lucide-react'
 import type { Cue, SubtitleOption, Video, YouTubeMetadata } from '../../api/endpoints'
 import { formatMs } from '../../lib/format'

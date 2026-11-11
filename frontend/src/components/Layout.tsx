@@ -8,9 +8,9 @@ export function Layout() {
       <Navbar />
       <main className="page-frame"><Outlet /></main>
       <footer className="app-footer">
-        <span>Local-first semantic video search</span>
+        {/* <span>Local-first semantic video search</span> */}
         <span className="divider" aria-hidden="true" />
-        <span>Your archive stays on your machine</span>
+        {/* <span>Your archive stays on your machine</span> */}
       </footer>
     </div>
   )
