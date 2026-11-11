@@ -118,10 +118,58 @@ func (s *Service) Search(ctx context.Context, query string, limit, offset int, v
 	return Fuse(semantic, lexical, s.cfg.RRFK, limit, offset), nil
 }
 
+// SearchIn searches within an explicit set of video IDs.
+//
+// The empty list is a real scope, not a wildcard: it matches nothing and
+// returns zero results without touching the embedder or the database. This
+// is the privacy invariant the browser-local library search relies on — an
+// empty or malformed client library must never widen into a global search.
+func (s *Service) SearchIn(ctx context.Context, query string, limit, offset int, videoIDs []string) ([]Result, error) {
+	query, err := Validate(query, limit, offset, "")
+	if err != nil {
+		return nil, err
+	}
+	ids, err := ValidateVideoIDs(videoIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return []Result{}, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.cfg.Timeout)
+	defer cancel()
+	semantic, lexical, err := s.scopedCandidates(ctx, query, ids)
+	if err != nil {
+		return nil, err
+	}
+	return Fuse(semantic, lexical, s.cfg.RRFK, limit, offset), nil
+}
+
+// Candidates returns raw semantic and lexical candidates for a query.
+// An empty videoID means unrestricted retrieval; it is reserved for internal
+// tooling — API handlers decide the scope.
 func (s *Service) Candidates(ctx context.Context, query, videoID string) ([]Candidate, []Candidate, error) {
-	query, err := Validate(query, 1, 0, videoID)
+	ids := []string(nil)
+	if videoID != "" {
+		var err error
+		if ids, err = ValidateVideoIDs([]string{videoID}); err != nil {
+			return nil, nil, err
+		}
+	}
+	return s.scopedCandidates(ctx, query, ids)
+}
+
+func (s *Service) scopedCandidates(ctx context.Context, query string, videoIDs []string) ([]Candidate, []Candidate, error) {
+	query, err := Validate(query, 1, 0, "")
 	if err != nil {
 		return nil, nil, err
+	}
+	if len(videoIDs) > 0 {
+		for _, id := range videoIDs {
+			if _, err := uuid.Parse(id); err != nil {
+				return nil, nil, fmt.Errorf("search: %w", ErrInvalidVideoID)
+			}
+		}
 	}
 	vectors, err := s.embedder.Embed(ctx, []string{query})
 	if err != nil {
@@ -130,11 +178,11 @@ func (s *Service) Candidates(ctx context.Context, query, videoID string) ([]Cand
 	if len(vectors) != 1 || len(vectors[0]) != 384 {
 		return nil, nil, fmt.Errorf("search: query embedder returned an invalid vector")
 	}
-	vectorCandidates, err := persistence.SearchVector(ctx, s.pool, vectors[0], videoID, s.cfg.CandidatePool)
+	vectorCandidates, err := persistence.SearchVector(ctx, s.pool, vectors[0], videoIDs, s.cfg.CandidatePool)
 	if err != nil {
 		return nil, nil, err
 	}
-	lexicalCandidates, err := persistence.SearchLexical(ctx, s.pool, query, videoID, s.cfg.CandidatePool)
+	lexicalCandidates, err := persistence.SearchLexical(ctx, s.pool, query, videoIDs, s.cfg.CandidatePool)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -149,6 +197,28 @@ func (s *Service) Candidates(ctx context.Context, query, videoID string) ([]Cand
 		lexical[i] = fromPersistenceCandidate(candidate)
 	}
 	return semantic, lexical, nil
+}
+
+// ValidateVideoIDs trims, deduplicates and validates video IDs. Values must
+// be UUIDs; the returned slice is safe to bind as a PostgreSQL uuid[].
+func ValidateVideoIDs(videoIDs []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(videoIDs))
+	ids := make([]string, 0, len(videoIDs))
+	for _, raw := range videoIDs {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, err := uuid.Parse(id); err != nil {
+			return nil, fmt.Errorf("%w: %q is not a valid video id", ErrInvalidVideoID, raw)
+		}
+		if _, duplicate := seen[id]; duplicate {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
 
 func fromPersistenceCandidate(candidate persistence.SearchCandidate) Candidate {

@@ -56,3 +56,58 @@ func TestTimestampURLRejectsInvalidURL(t *testing.T) {
 		t.Fatalf("expected nil timestamp URL, got %q", *got)
 	}
 }
+
+func TestValidateVideoIDsTrimsDeduplicatesAndValidates(t *testing.T) {
+	ids, err := ValidateVideoIDs([]string{"  00000000-0000-0000-0000-000000000001  ", "00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002", ""})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ids) != 2 || ids[0] != "00000000-0000-0000-0000-000000000001" || ids[1] != "00000000-0000-0000-0000-000000000002" {
+		t.Fatalf("unexpected ids: %#v", ids)
+	}
+}
+
+func TestValidateVideoIDsRejectsNonUUIDs(t *testing.T) {
+	if _, err := ValidateVideoIDs([]string{"00000000-0000-0000-0000-000000000001", "not-a-uuid"}); !errors.Is(err, ErrInvalidVideoID) {
+		t.Fatalf("expected invalid video id error, got %v", err)
+	}
+}
+
+// The privacy invariant: an empty scope is a real scope that matches nothing.
+// It must return zero results without embedding the query or touching the
+// database (a nil pool/embedder is never dereferenced on this path).
+func TestSearchInWithEmptyScopeReturnsNoResults(t *testing.T) {
+	service := NewService(nil, nil, Config{})
+	results, err := service.SearchIn(t.Context(), "database replication", 10, 0, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected zero results for an empty scope, got %d", len(results))
+	}
+}
+
+func TestSearchInWithBlankScopeReturnsNoResults(t *testing.T) {
+	service := NewService(nil, nil, Config{})
+	results, err := service.SearchIn(t.Context(), "database replication", 10, 0, []string{"", "   "})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected zero results for a blank scope, got %d", len(results))
+	}
+}
+
+func TestSearchInRejectsInvalidScopedIDs(t *testing.T) {
+	service := NewService(nil, nil, Config{})
+	if _, err := service.SearchIn(t.Context(), "query", 10, 0, []string{"not-a-uuid"}); !errors.Is(err, ErrInvalidVideoID) {
+		t.Fatalf("expected invalid video id error, got %v", err)
+	}
+}
+
+func TestSearchInStillValidatesQuery(t *testing.T) {
+	service := NewService(nil, nil, Config{})
+	if _, err := service.SearchIn(t.Context(), "  ", 10, 0, []string{"00000000-0000-0000-0000-000000000001"}); !errors.Is(err, ErrEmptyQuery) {
+		t.Fatalf("expected empty query error, got %v", err)
+	}
+}

@@ -25,25 +25,10 @@ export interface SearchResult {
 }
 export interface SearchResponse { query: string; limit: number; offset: number; duration_ms: number; results: SearchResult[] }
 
-export function listVideos(limit = 200, offset = 0): Promise<{ videos: Video[] }> {
-  return apiClient.get(`/api/v1/videos?limit=${limit}&offset=${offset}`)
+export function getVideo(id: string): Promise<Video> {
+  return apiClient.get(`/api/v1/videos/${id}`)
 }
 
-// The video list endpoint is paginated; load every page so title search
-// covers the whole library, not just the first page.
-export const VIDEO_PAGE_SIZE = 200
-
-export async function fetchAllVideos(): Promise<Video[]> {
-  const all: Video[] = []
-  let offset = 0
-  for (;;) {
-    const page = await listVideos(VIDEO_PAGE_SIZE, offset)
-    all.push(...page.videos)
-    if (page.videos.length < VIDEO_PAGE_SIZE) break
-    offset += page.videos.length
-  }
-  return all
-}
 export function listSubtitles(url: string): Promise<SubtitleDiscovery> { return apiClient.get(`/api/v1/videos/subtitles?url=${encodeURIComponent(url)}`) }
 export function ingestYouTube(url: string, language: string, subtitle?: SubtitleOption): Promise<Video> {
   return apiClient.post('/api/v1/videos', {
@@ -63,6 +48,14 @@ export function getTranscript(id: string, limit?: number, offset?: number): Prom
 }
 export function getProcessing(id: string): Promise<ProcessingState> { return apiClient.get(`/api/v1/videos/${id}/processing`) }
 export function deleteVideo(id: string): Promise<void> { return apiClient.delete(`/api/v1/videos/${id}`) }
-export function search(query: string, limit = 10, videoId?: string): Promise<SearchResponse> {
-  return apiClient.post('/api/v1/search', { query, limit, video_id: videoId || undefined })
+export function search(query: string, limit = 10, videoId?: string, videoIds?: string[]): Promise<SearchResponse> {
+  return apiClient.post('/api/v1/search', {
+    query,
+    limit,
+    video_id: videoId || undefined,
+    // An explicit ID list scopes the search to the browser-local library.
+    // The backend treats an empty list as a real empty scope (zero results),
+    // never as an unrestricted search.
+    video_ids: videoIds,
+  })
 }

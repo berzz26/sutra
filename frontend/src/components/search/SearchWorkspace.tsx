@@ -231,7 +231,7 @@ function LibraryPane({ ...props }: SearchWorkspaceProps) {
           maxLength={2000}
           autoComplete="off"
         />
-        <span className="search-bar-tools" aria-hidden="true"><SlidersHorizontal size={17} /></span>
+        {/* <span className="search-bar-tools" aria-hidden="true"><SlidersHorizontal size={17} /></span> */}
         <button type="submit" className="search-submit" disabled={props.searching}>
           {props.searching ? <LoaderIcon /> : <SearchIcon size={16} />}
           <span className="submit-label">Search</span>

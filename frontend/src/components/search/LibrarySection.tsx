@@ -26,7 +26,7 @@ export function LibrarySection({ videos, loading, openId, cues, cuesLoading, onT
       {loading ? (
         <div className="library-list"><Skeleton className="library-skeleton" /><Skeleton className="library-skeleton" /></div>
       ) : videos.length === 0 ? (
-        <div className="empty-library"><FolderOpen size={22} /><h3>Your library is quiet</h3><p>Add a YouTube video or transcript above to start searching.</p></div>
+        <div className="empty-library"><FolderOpen size={22} /><h3>Your library is quiet here</h3><p>Videos you add from this browser appear here. Add a YouTube video or transcript above to start searching.</p></div>
       ) : (
         <div className="library-list">
           {videos.map((video) => (
@@ -84,7 +84,7 @@ function VideoCard({ video, open, cues, loading, onToggle, onDelete }: { video: 
         </div>
         <div className="video-actions">
           <Button variant="secondary" size="sm" onClick={onToggle}>{open ? 'Hide transcript' : 'View transcript'}</Button>
-          <Button variant="ghost" size="icon" aria-label={`Delete ${video.title || 'video'}`} onClick={onDelete}><Trash2 size={16} /></Button>
+          <Button variant="ghost" size="icon" aria-label={`Remove ${video.title || 'video'} from this browser's library`} onClick={onDelete}><Trash2 size={16} /></Button>
         </div>
       </div>
       {open && (

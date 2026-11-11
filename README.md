@@ -162,15 +162,24 @@ The `score` field is an RRF fusion score, not a probability. See
 [Search](docs/search.md) and the [API reference](docs/api.md) for details and
 error handling.
 
+Each browser keeps its own video library in `localStorage`: the UI only
+lists and searches the videos that browser has added, while the database
+remains shared. The global video listing (`GET /api/v1/videos`) and video
+deletion are administrative endpoints protected by `ADMIN_API_TOKEN`; see
+[Configuration](docs/configuration.md).
+
 ## Configuration
 
 The stack works out of the box for local use. For anything reachable by other
 people:
 
 1. Set a strong `POSTGRES_PASSWORD` (and MinIO credentials if enabled).
-2. Put an authenticating TLS reverse proxy in front of the frontend; Sutra has
+2. Set `ADMIN_API_TOKEN` (e.g. `openssl rand -hex 32`) to control access to
+   the global video listing and video deletion endpoints. When unset, those
+   endpoints reject every request.
+3. Put an authenticating TLS reverse proxy in front of the frontend; Sutra has
    no built-in login.
-3. Keep the API and database ports bound to loopback, as the default Compose
+4. Keep the API and database ports bound to loopback, as the default Compose
    file does.
 
 Start with [.env.example](.env.example) and

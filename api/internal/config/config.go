@@ -22,6 +22,11 @@ type Config struct {
 	// Values: "debug", "info", "warn", "error"
 	LogLevel string // LOG_LEVEL
 
+	// Admin token protecting administrative endpoints (global video listing,
+	// video deletion). Never logged, never sent to the frontend.
+	// Values: ADMIN_API_TOKEN
+	AdminToken string
+
 	// Artifact store (optional, used later for uploaded transcripts/media).
 	Artifact ArtifactConfig
 
@@ -76,6 +81,7 @@ func Load() (*Config, error) {
 		Port:        getenv("SERVER_PORT", "8080"),
 		DatabaseURL: getenv("DATABASE_URL", ""),
 		LogLevel:    getenv("LOG_LEVEL", "info"),
+		AdminToken:  getenv("ADMIN_API_TOKEN", ""),
 	}
 
 	artifactEnabled, err := getBool("ARTIFACT_STORE_ENABLED", false)

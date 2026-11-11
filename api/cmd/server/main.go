@@ -42,6 +42,12 @@ func run(ctx context.Context) error {
 	logger := newLogger(cfg.LogLevel)
 	slog.SetDefault(logger)
 
+	if cfg.AdminToken == "" {
+		// Fail closed: administrative endpoints deny every request until a
+		// token is configured. The value itself is never logged.
+		slog.Warn("ADMIN_API_TOKEN is not set; administrative endpoints (global video listing, video deletion) reject all requests")
+	}
+
 	pool, err := persistence.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err
@@ -73,7 +79,7 @@ func run(ctx context.Context) error {
 	retriever := retrieval.NewService(pool, emb, retrieval.Config{CandidatePool: cfg.Search.CandidatePool, RRFK: cfg.Search.RRFK, Timeout: cfg.Search.Timeout})
 	worker := jobs.NewWorker(pool, processor, cfg.Workers)
 	worker.Start(runCtx)
-	srv := server.New(cfg.Host+":"+cfg.Port, pool, service, processor, retriever, cfg.MaxUpload)
+	srv := server.New(cfg.Host+":"+cfg.Port, pool, service, processor, retriever, cfg.MaxUpload, cfg.AdminToken)
 
 	err = srv.Run(runCtx)
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.Shutdown)

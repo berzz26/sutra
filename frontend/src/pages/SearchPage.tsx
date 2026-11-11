@@ -2,21 +2,24 @@ import { useEffect, useDeferredValue, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Search as SearchIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { deleteVideo, fetchAllVideos, getProcessing, getTranscript, ingestYouTube, listSubtitles, search, uploadTranscript } from '../api/endpoints'
+import { getProcessing, getTranscript, getVideo, ingestYouTube, listSubtitles, search, uploadTranscript } from '../api/endpoints'
 import type { Cue, ProcessingState, SearchResult, SubtitleOption, Video as VideoRecord, YouTubeMetadata } from '../api/endpoints'
-import { Skeleton } from '../components/ui'
-import { AlertDialog } from '../components/ui'
+import { AlertDialog, Skeleton } from '../components/ui'
+import { ApiError } from '../api/client'
 import { HeroSection } from '../components/HeroSection'
 import { SearchWorkspace, type WorkspaceTab } from '../components/search/SearchWorkspace'
 import { ResultCard } from '../components/search/ResultCard'
 import { RecentSearches } from '../components/search/RecentSearches'
 import { LibrarySection } from '../components/search/LibrarySection'
 import { errorText } from '../lib/format'
+import { getLocalLibraryIDs, addVideoToLibrary, removeVideoFromLibrary, subscribeLocalLibrary } from '../lib/localLibrary'
 import { loadRecentSearches, rememberSearch, type RecentSearch } from '../lib/recentSearches'
 
 const TRANSCRIPT_PAGE_SIZE = 200
 
 export function SearchPage() {
+  // videos is metadata for the videos saved in this browser's local library
+  // only — never the shared global listing.
   const [videos, setVideos] = useState<VideoRecord[]>([])
   const [currentVideo, setCurrentVideo] = useState<VideoRecord | null>(null)
   const [searchScope, setSearchScope] = useState<'video' | 'library'>('video')
@@ -48,17 +51,48 @@ export function SearchPage() {
   const [browseSelected, setBrowseSelected] = useState<VideoRecord | null>(null)
   const [browseCues, setBrowseCues] = useState<Cue[]>([])
   const [browseLoading, setBrowseLoading] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<VideoRecord | null>(null)
+  const [removeTarget, setRemoveTarget] = useState<VideoRecord | null>(null)
 
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>(() => loadRecentSearches())
   const [searchParams] = useSearchParams()
 
-  const refresh = async () => {
+  const loadLibrary = async () => {
     setLoadingVideos(true)
-    try { setVideos(await fetchAllVideos()) } catch (cause) { toast.error(errorText(cause)) } finally { setLoadingVideos(false) }
+    try {
+      const ids = getLocalLibraryIDs()
+      if (ids.length === 0) {
+        setVideos([])
+        return
+      }
+      // Metadata is fetched per ID from the existing single-video endpoint;
+      // the global listing is administrative and never used here.
+      const settled = await Promise.allSettled(ids.map((id) => getVideo(id)))
+      const loaded: VideoRecord[] = []
+      const staleIDs: string[] = []
+      settled.forEach((outcome, index) => {
+        if (outcome.status === 'fulfilled') loaded.push(outcome.value)
+        else if (isNotFound(outcome.reason)) staleIDs.push(ids[index])
+      })
+      // References to videos deleted from the database are dead weight; they
+      // can never resolve again, so drop them quietly.
+      if (staleIDs.length > 0) {
+        for (const id of staleIDs) removeVideoFromLibrary(id)
+        toast.info(`${staleIDs.length} unavailable ${staleIDs.length === 1 ? 'video was' : 'videos were'} removed from this browser's library.`)
+      }
+      loaded.sort((a, b) => (b.created_at > a.created_at ? 1 : -1))
+      setVideos(loaded)
+    } catch (cause) {
+      toast.error(errorText(cause))
+    } finally {
+      setLoadingVideos(false)
+    }
   }
 
-  useEffect(() => { void refresh() }, [])
+  // Keep component state synchronized with localStorage (including changes
+  // made in other tabs of the same browser).
+  useEffect(() => subscribeLocalLibrary(() => void loadLibrary()), [])
+
+  useEffect(() => { void loadLibrary() }, [])
 
   // Navbar "Library" links to /?tab=library; keep the workspace tab in sync.
   useEffect(() => {
@@ -82,8 +116,11 @@ export function SearchPage() {
     try {
       const result = await listSubtitles(url)
       setYoutubePreview(result.metadata)
-      setSubtitleOptions(result.subtitles)
-      setTranslatedSubtitleOptions(result.translated_subtitles)
+      // The API can omit these arrays entirely (e.g. videos with no
+      // translated tracks); coerce so downstream `.some` calls never see
+      // null/undefined.
+      setSubtitleOptions(Array.isArray(result.subtitles) ? result.subtitles : [])
+      setTranslatedSubtitleOptions(Array.isArray(result.translated_subtitles) ? result.translated_subtitles : [])
       const english = result.subtitles.find((option) => /^en(?:[-_]|$)/i.test(option.language))
       setSelectedSubtitle(english ? `${english.source}:${english.language}` : '')
       toast.success(`Found ${result.subtitles.length} subtitle tracks`)
@@ -101,7 +138,11 @@ export function SearchPage() {
     throw new Error('Indexing is taking longer than expected. Check the library for status.')
   }
 
-  const selectIndexedVideo = (result: VideoRecord) => {
+  // Called only after ingestion completes successfully: the ID is the actual
+  // database ID returned by the backend, and it is saved to this browser's
+  // local library. Failed ingestions never reach this point.
+  const adoptIndexedVideo = (result: VideoRecord) => {
+    addVideoToLibrary(result.id)
     setCurrentVideo(result); setSearchScope('video'); setSearchResults([]); setSearchDuration(null); setSearchMessage(null)
     clearIngestState(); setPipeline(null)
   }
@@ -113,9 +154,8 @@ export function SearchPage() {
       const result = await ingestYouTube(url, language, subtitle)
       setPipeline({ progress: 45, stage: 'queued for indexing', state: null })
       await waitForProcessing(result.id)
-      selectIndexedVideo(result)
-      toast.success('Video indexed and ready to search')
-      await refresh()
+      adoptIndexedVideo(result)
+      toast.success('Video indexed and added to your library')
     } catch (cause) { toast.error(errorText(cause)); setPipeline((current) => current ? { ...current, stage: 'failed' } : null) } finally { setBusy(false) }
   }
 
@@ -131,9 +171,8 @@ export function SearchPage() {
       const result = await uploadTranscript(data)
       setPipeline({ progress: 45, stage: 'queued for indexing', state: null })
       await waitForProcessing(result.id)
-      selectIndexedVideo(result)
-      toast.success('Transcript indexed and ready to search')
-      await refresh()
+      adoptIndexedVideo(result)
+      toast.success('Transcript indexed and added to your library')
     } catch (cause) { toast.error(errorText(cause)); setPipeline((current) => current ? { ...current, stage: 'failed' } : null) } finally { setBusy(false) }
   }
 
@@ -142,10 +181,18 @@ export function SearchPage() {
   const executeSearch = async (query: string, scope: 'video' | 'library', videoId?: string) => {
     if (!query.trim()) { setSearchMessage('Enter a question or topic to search.'); return }
     if (scope === 'video' && !videoId) { setSearchMessage('Fetch and index a video before searching within it.'); return }
+    // Entire Library means "this browser's saved videos" — the request is
+    // always sent with an explicit ID list, never as a global search.
+    const libraryIDs = getLocalLibraryIDs()
+    if (scope === 'library' && libraryIDs.length === 0) {
+      setSearchResults([]); setSearchDuration(null)
+      setSearchMessage('Your library is empty here. Add a video first and it will be searchable.')
+      return
+    }
     const started = performance.now()
     setSearching(true); setSearchMessage(null); setSearchDuration(null)
     try {
-      const result = await search(query, 10, scope === 'video' ? videoId : undefined)
+      const result = await search(query, 10, scope === 'video' ? videoId : undefined, scope === 'library' ? libraryIDs : undefined)
       setSearchResults(result.results)
       setSearchDuration({ client: Math.round(performance.now() - started), server: result.duration_ms })
       if (result.results.length === 0) setSearchMessage('No indexed transcript matches found. Try a broader phrase.')
@@ -168,8 +215,8 @@ export function SearchPage() {
 
   const runRecentSearch = (entry: RecentSearch) => {
     setSearchQuery(entry.query)
-    const stillAvailable = entry.videoId ? videos.some((video) => video.id === entry.videoId) : false
-    if (entry.scope === 'video' && stillAvailable && entry.videoId) {
+    const stillSaved = entry.videoId ? videos.some((video) => video.id === entry.videoId) : false
+    if (entry.scope === 'video' && stillSaved && entry.videoId) {
       const video = videos.find((candidate) => candidate.id === entry.videoId) ?? null
       setCurrentVideo(video); setSearchScope('video'); setTab('youtube')
       void executeSearch(entry.query, 'video', entry.videoId)
@@ -196,7 +243,22 @@ export function SearchPage() {
     clearIngestState()
   }
 
-  /* ---------- Transcripts & library ---------- */
+  /* ---------- Library management (browser-local) ---------- */
+
+  // Removing a video only drops its ID from this browser's localStorage —
+  // the shared database record and other browsers are untouched.
+  const confirmRemove = () => {
+    if (!removeTarget) return
+    const id = removeTarget.id
+    removeVideoFromLibrary(id)
+    setRemoveTarget(null)
+    if (currentVideo?.id === id) { setCurrentVideo(null); setSearchResults([]); setSearchDuration(null); setSearchMessage(null) }
+    if (browseSelected?.id === id) { setBrowseSelected(null); setBrowseCues([]) }
+    if (open === id) { setOpen(null); setCues([]) }
+    toast.success('Removed from this browser\'s library. The shared database record is untouched.')
+  }
+
+  /* ---------- Transcripts ---------- */
 
   const fetchAllCues = async (video: VideoRecord): Promise<Cue[]> => {
     const expected = video.transcript?.cue_count
@@ -222,19 +284,6 @@ export function SearchPage() {
     if (browseSelected?.id === video.id && browseCues.length >= (video.transcript?.cue_count ?? 0)) return
     setBrowseSelected(video); setBrowseLoading(true); setBrowseCues([])
     try { setBrowseCues(await fetchAllCues(video)) } catch (cause) { toast.error(errorText(cause)) } finally { setBrowseLoading(false) }
-  }
-
-  const confirmDelete = async () => {
-    if (!deleteTarget) return
-    try {
-      await deleteVideo(deleteTarget.id)
-      setDeleteTarget(null)
-      if (open === deleteTarget.id) { setOpen(null); setCues([]) }
-      if (browseSelected?.id === deleteTarget.id) { setBrowseSelected(null); setBrowseCues([]) }
-      if (currentVideo?.id === deleteTarget.id) { setCurrentVideo(null); setSearchResults([]); setSearchDuration(null); setSearchMessage(null) }
-      toast.success('Video removed from your library')
-      await refresh()
-    } catch (cause) { toast.error(errorText(cause)) }
   }
 
   // Defer the filter so typing stays instant.
@@ -320,17 +369,21 @@ export function SearchPage() {
         cues={cues}
         cuesLoading={transcriptLoading}
         onToggle={(video) => void showTranscript(video)}
-        onDelete={setDeleteTarget}
+        onDelete={setRemoveTarget}
       />
     )}
 
     <AlertDialog
-      open={deleteTarget !== null}
-      title="Remove this video?"
-      description="This deletes the video, transcript cues, and indexed moments. This cannot be undone."
-      confirmLabel="Delete video"
-      onCancel={() => setDeleteTarget(null)}
-      onConfirm={() => void confirmDelete()}
+      open={removeTarget !== null}
+      title="Remove from your library?"
+      description="This removes the video from this browser's library only. The shared database record and other browsers are unaffected."
+      confirmLabel="Remove from library"
+      onCancel={() => setRemoveTarget(null)}
+      onConfirm={confirmRemove}
     />
   </>
+}
+
+function isNotFound(cause: unknown) {
+  return cause instanceof ApiError && cause.status === 404
 }
