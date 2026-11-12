@@ -22,7 +22,13 @@ export function Navbar() {
       <div className="header-inner">
         <Link to="/" className="brand" aria-label="Sutra home">
           <span className="brand-mark">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill={dark ? '#17191F' : '#FFFFFF'}
+              aria-hidden="true"
+            >
               <rect x="2" y="5" width="14" height="14" rx="3.5" />
               <path d="M17 10.2l4.1-2.4a1 1 0 0 1 1.5.87v6.66a1 1 0 0 1-1.5.87L17 13.8z" />
             </svg>
