@@ -3,14 +3,14 @@ import { Sparkles } from 'lucide-react'
 export function HeroSection() {
   return (
     <section className="hero">
-      <div className="hero-pill">
+      {/* <div className="hero-pill">
         <span className="sparkle"><Sparkles size={13} /></span>
         Your video knowledge engine
-      </div>
+      </div> */}
       <h1 className="hero-title">
-        Find the moment<br /><span className="accent">that matters.</span>
+        Remember the idea<br /><span className="accent">We'll find the moment</span>
       </h1>
-      <p className="hero-description">Search every video, lecture, and idea in your library using natural language.</p>
+      <p className="hero-description">Can't remember where something was discussed? Describe what you're looking for. Sutra searches your video transcripts and finds the relevant moment.</p>
     </section>
   )
 }
