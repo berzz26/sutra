@@ -5,8 +5,11 @@ go 1.26.0
 require (
 	github.com/gofiber/fiber/v2 v2.52.16
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.12.0
+	github.com/jackc/pgx/v5 v5.13.0
+	github.com/microsoft/onnxruntime/go v0.0.0-20261102100127-d460f01a9d84
 	github.com/minio/minio-go/v7 v7.4.1
+	github.com/sugarme/tokenizer v0.3.0
+	github.com/yalue/onnxruntime_go v1.23.0
 )
 
 require (
@@ -24,7 +27,6 @@ require (
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/mattn/go-runewidth v0.0.24 // indirect
-	github.com/microsoft/onnxruntime/go v0.0.0-20261102100127-d460f01a9d84 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
@@ -34,12 +36,10 @@ require (
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/schollz/progressbar/v2 v2.15.0 // indirect
 	github.com/sugarme/regexpset v0.0.0-20200920021344-4d4ec8eaf93c // indirect
-	github.com/sugarme/tokenizer v0.3.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
-	github.com/yalue/onnxruntime_go v1.23.0 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
